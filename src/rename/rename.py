@@ -6,25 +6,22 @@ import os
 # 导入shutil库
 import shutil
 import subprocess
-import json
+
 import re
 import argparse
 import glob
 import hashlib
-from tqdm import tqdm
 from decimal import Decimal
+from tqdm import tqdm
 import hashlib
-
 # 导入logging库
 import logging
+
+from common.tool import *
 
 # 设置日志格式和级别
 # logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s', level=logging.INFO)
 logging.basicConfig(filename='rename.log', level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
-
-VIDEO_LIST = ['mp4', 'avi', 'mov']
-IMAGE_LIST = ['jpg', 'png', 'mpg', 'thm', 'bmp', 'jpeg', 'heic','dng']
-SUFFIX_FILTER = VIDEO_LIST + IMAGE_LIST + ['gif']
 
 def get_md5(filename):
     md5 = hashlib.md5()
@@ -35,16 +32,6 @@ def get_md5(filename):
                 break
             md5.update(data)
     return md5.hexdigest()
-
-def get_metadata(file_path):
-    try:
-        cmd = ['exiftool', '-j', file_path]
-        output = subprocess.check_output(cmd)
-        metadata = json.loads(output)[0]
-    except Exception as e:
-        metadata = None
-        logging.error(f'{file_path} {e}')
-    return metadata
 
 # 获取视频的元数据
 def get_metadata_ff(file_path):
@@ -93,16 +80,6 @@ def is_live_photo_VID(filename):
     f, e = os.path.splitext(filename)
     ext = e[1:]
     return liveP is not None and ext.lower() in ["mov"]
-
-def is_IMG(filename):
-    f, e = os.path.splitext(filename)
-    ext = e[1:]
-    return ext.lower() in IMAGE_LIST
-
-def is_VID(filename):
-    f, e = os.path.splitext(filename)
-    ext = e[1:]
-    return ext.lower() in VIDEO_LIST
 
 def live_photo_filter(folder_path, filter_str):
     file_list = glob.glob(os.path.join(folder_path, filter_str))
@@ -156,6 +133,12 @@ def tag_m(metadata):
         m = 'FUJ'
     elif contains_keywords(m, ['Nokia']):
         m = 'Nokia'
+    elif contains_keywords(m, ['HUAWEI']):
+        m = 'HUAWEI'
+    elif contains_keywords(m, ['Smartisan']):
+        m = 'Smartisan'
+    elif contains_keywords(m, ['Yiruikecorp']):
+        m = 'Yiruikecorp'
     else:
         raise ValueError(f'convert failure: {m}')
         # return None
@@ -358,7 +341,7 @@ def need_ignore_file(folder_path, obj):
     # 获取文件的扩展名（不包含点）
     f, e = os.path.splitext(obj)
     ext = e[1:]
-    if ext.lower() not in SUFFIX_FILTER:
+    if ext.lower() not in FILE_EXT_LIST:
         return True
     if args.ignore_formatted is False:
         if is_formatted_file_name(obj):
@@ -456,7 +439,6 @@ parser.add_argument('--rename', dest='rename', action='store_true', default=Fals
                     help='rename file')
 parser.add_argument('--ignore_formatted', dest='ignore_formatted', action='store_true', default=False,
                     help='ignore formated file')
-
 
 args = parser.parse_args()
 print(f'source: {args.source}')

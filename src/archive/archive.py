@@ -12,22 +12,14 @@ import argparse
 
 from tqdm import tqdm
 
+from common.tool import *
+
 # 导入logging库
 import logging
 
 # 设置日志格式和级别
 # logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s', level=logging.INFO)
 logging.basicConfig(filename='archived.log', level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
-
-def get_metadata(file_path):
-    try:
-        cmd = ['exiftool', '-j', file_path]
-        output = subprocess.check_output(cmd)
-        metadata = json.loads(output)[0]
-    except Exception as e:
-        metadata = None
-        logging.error(f'{file_path} {e}')
-    return metadata
 
 def is_valid_date(text):
     pattern = r"\b\d{4}:\d{2}:\d{2}\s\d{2}:\d{2}:\d{2}([+-]\d{2}:\d{2})?\b"
@@ -69,7 +61,7 @@ def archive_obj(folder_path, target_path, obj):
         return
     # 获取文件的扩展名（不包含点）
     ext = os.path.splitext(obj)[1][1:]
-    if ext.lower() not in ['mov', 'mp4', 'm4v', 'jpg', 'jpeg', 'heic', 'png', 'dng', 'gif']:
+    if ext.lower() not in FILE_EXT_LIST:
         return
     # 获取文件的创建日期
     date = get_date(file_path)
@@ -117,5 +109,6 @@ args = parser.parse_args()
 print('source:' + args.source)
 print('destination:' + (args.destination if args.destination else args.source))
 
-# 调用函数，将源文件夹内的文件按照创建日期分到目标路径的对应年份的对应季度
-sort_files(args.source, args.destination if args.destination else args.source)
+if __name__ == "__main__":
+    # 调用函数，将源文件夹内的文件按照创建日期分到目标路径的对应年份的对应季度
+    sort_files(args.source, args.destination if args.destination else args.source)
