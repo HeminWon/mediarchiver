@@ -138,6 +138,10 @@ def tag_m(metadata):
         m = 'Yiruikecorp'
     elif contains_keywords(m, ['OnePlus']):
         m = 'OnePlus'
+    elif contains_keywords(m, ['vivo']):
+        m = 'vivo'
+    elif contains_keywords(m, ['DJI']):
+        m =  'DJI'
     else:
         raise ValueError(f'convert failure: {m}')
         # return None
@@ -381,11 +385,15 @@ def generate_new_filename(folder_path, obj):
     _, e = os.path.splitext(obj)
 
     # 1、是否为 livephoto
-    live_photo_num = file_number(file_path)
-    if live_photo_num is None:
-        return None
-    t_file = live_photo_match_image(os.path.dirname(file_path), live_photo_num)
-    if t_file is not None:
+    if is_live_photo_VID(file_path):
+        live_photo_num = file_number(file_path)
+        if live_photo_num is None:
+            logging.error(f'livephoto number is error, file: {obj}')
+            return None
+        t_file = live_photo_match_image(os.path.dirname(file_path), live_photo_num)
+        if t_file is None:
+            logging.error(f'livephoto not found match image, file: {obj}')
+            return None
         t_prefix = generate_new_filename_prefix(folder_path, t_file)
         if t_prefix is not None:
             return t_prefix + e
