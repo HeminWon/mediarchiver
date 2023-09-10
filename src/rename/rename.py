@@ -17,7 +17,7 @@ import hashlib
 # 导入logging库
 import logging
 
-from common.tool import *
+from src.common.tool import *
 
 # 设置日志格式和级别
 # logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s', level=logging.INFO)
@@ -70,26 +70,23 @@ def contains_keywords(s, keywords):
         return False
     return any(keyword.lower() in s.lower() for keyword in keywords)
 
-def is_live_photo_VID(filename):
-    metadata = get_metadata(filename)
-    if metadata is None:
-        return None
-    liveP = metadata.get("LivePhotoVitalityScore", metadata.get("LivePhotoVitalityScoringVersion", None))
-    if liveP is None:
-        return False
-    f, e = os.path.splitext(filename)
-    ext = e[1:]
-    return liveP is not None and ext.lower() in ["mov"]
-
-def live_photo_filter(folder_path, filter_str):
-    file_list = glob.glob(os.path.join(folder_path, filter_str))
-    return file_list[0] if file_list else None
+def live_photo_match_image(folder_path, filter_num):
+    patter_str = rf'{filter_num}\.(' + '|'.join(IMAGE_EXT_LIST) + ')$'
+    # print(patter_str)
+    pattern = re.compile(patter_str, re.IGNORECASE)
+    image_files = [file for file in glob.glob(folder_path + '/*') if pattern.search(file)]
+    return image_files[0] if image_files else None
 
 def exist_filter_file(folder_path, filter_file):
     file_list = glob.glob(os.path.join(folder_path, filter_file))
     return True if len(file_list) > 0 else False
 
 def file_number(file_name, try_hash=False):
+    """
+    获取文件四位编号：
+    - 排除日期之外的连续后四位数字作为编号 
+    - 获取文件hash后转十进制取后四位作为编号
+    """
     filename_nopath = os.path.basename(file_name)
     rm = re.search(r'\d{8}[-_]\d{6}', filename_nopath)
     file_name_rm = filename_nopath
@@ -139,6 +136,8 @@ def tag_m(metadata):
         m = 'Smartisan'
     elif contains_keywords(m, ['Yiruikecorp']):
         m = 'Yiruikecorp'
+    elif contains_keywords(m, ['OnePlus']):
+        m = 'OnePlus'
     else:
         raise ValueError(f'convert failure: {m}')
         # return None
@@ -241,13 +240,7 @@ def tag_ff_encoder(metadata):
 
 def formatted_tags(filename):
     if is_live_photo_VID(filename):
-        live_phto_num = file_number(filename)
-        if live_phto_num is None:
-            return formated_tags_VID(filename)
-        t_file = live_photo_filter(os.path.dirname(filename), "*" + live_phto_num + ".[hH][eE][iI][cC]")
-        if t_file is None:
-            return formated_tags_VID(filename)
-        return formatted_tags(t_file)
+        raise ValueError(f'livephoto rename failure: {filename}')
     if is_IMG(filename):
         return formated_tags_IMG(filename)
     elif is_VID(filename):
@@ -348,9 +341,10 @@ def need_ignore_file(folder_path, obj):
             return True
     return False
 
-def generate_new_filename(folder_path, obj):
+def generate_new_filename_prefix(folder_path, obj):
     # 获取文件的完整路径
     file_path = os.path.join(folder_path, obj)
+
     # 获取文件的创建日期
     date = get_date(file_path)
     if date is None:
@@ -377,9 +371,31 @@ def generate_new_filename(folder_path, obj):
         return None
     else:
         items.append(f_num)
+    new_file_name_prefix = '_'.join(items)
+    return new_file_name_prefix
+
+def generate_new_filename(folder_path, obj):
+    # 获取文件的完整路径
+    file_path = os.path.join(folder_path, obj)
+
     _, e = os.path.splitext(obj)
-    new_file_name = '_'.join(items) + e
-    return new_file_name
+
+    # 1、是否为 livephoto
+    live_photo_num = file_number(file_path)
+    if live_photo_num is None:
+        return None
+    t_file = live_photo_match_image(os.path.dirname(file_path), live_photo_num)
+    if t_file is not None:
+        t_prefix = generate_new_filename_prefix(folder_path, t_file)
+        if t_prefix is not None:
+            return t_prefix + e
+        else:
+            return None
+    prefix = generate_new_filename_prefix(folder_path, obj)
+    if prefix is None:
+        return None
+    else:
+        return prefix + e
 
 def list_md5(file):
     md5s = set()

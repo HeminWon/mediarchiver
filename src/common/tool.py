@@ -21,6 +21,17 @@ def is_VID(filename):
     ext = e[1:]
     return ext.lower() in VIDEO_EXT_LIST
 
+def is_live_photo_VID(filename):
+    metadata = get_metadata(filename)
+    if metadata is None:
+        return None
+    liveP = metadata.get("LivePhotoVitalityScore", metadata.get("LivePhotoVitalityScoringVersion", metadata.get("ContentIdentifier", None)))
+    if liveP is None:
+        return False
+    f, e = os.path.splitext(filename)
+    ext = e[1:]
+    return liveP is not None and ext.lower() in ["mov"]
+
 def get_metadata(file_path):
     try:
         cmd = ['exiftool', '-j', file_path]
