@@ -142,6 +142,8 @@ def tag_m(metadata):
         m = 'vivo'
     elif contains_keywords(m, ['DJI']):
         m =  'DJI'
+    elif contains_keywords(m, ['Hasselblad']):
+        m = 'Hasselblad'
     else:
         raise ValueError(f'convert failure: {m}')
         # return None
