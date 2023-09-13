@@ -105,13 +105,11 @@ def file_number(file_name, try_hash=False):
         last_four_digits_str = str_digits[-4:]
         return last_four_digits_str if len(last_four_digits_str) == 4 else None
 
-def tag_m(metadata):
-    # Make 拍摄的设备
-    m = metadata.get("Make", None)
-    if m is None:
-        return None
+def deal_with_m(m):
     if contains_keywords(m, ["Apple", "iPhone"]):
         m = "iPh"
+    if contains_keywords(m, ['iPad']):
+        m = "iPad"
     elif contains_keywords(m, ["xiaomi", "mi"]):
         m = "MI"
     elif contains_keywords(m, ["SONY"]):
@@ -122,7 +120,7 @@ def tag_m(metadata):
         m = "NIK"
     elif contains_keywords(m, ["casio"]):
         m = "CAS"
-    elif contains_keywords(m, ["GoPro"]):
+    elif contains_keywords(m, ['GoPro', 'HERO10', 'HERO9']):
         m = "GoP"
     elif contains_keywords(m, ['ZTE']):
         m = 'ZTE'
@@ -148,6 +146,16 @@ def tag_m(metadata):
         raise ValueError(f'convert failure: {m}')
         # return None
     return "M" + m
+
+def tag_m(metadata):
+    # Make 拍摄的设备
+    make = metadata.get('Make', None)
+    if make is not None:
+        return deal_with_m(make)
+    model = metadata.get('Model', None)
+    if model is not None:
+        return deal_with_m(model)
+    raise ValueError(f'convert failure: tag_m')
 
 def tag_c(metadata):
     c = ""

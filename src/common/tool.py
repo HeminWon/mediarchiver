@@ -22,6 +22,9 @@ def is_VID(filename):
     return ext.lower() in VIDEO_EXT_LIST
 
 def is_live_photo_VID(filename):
+    '''
+    Determining if it is a livephoto through exif.
+    '''
     metadata = get_metadata(filename)
     if metadata is None:
         return None
