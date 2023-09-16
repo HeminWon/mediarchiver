@@ -108,7 +108,7 @@ def file_number(file_name, try_hash=False):
 def deal_with_m(m):
     if contains_keywords(m, ["Apple", "iPhone"]):
         m = "iPh"
-    if contains_keywords(m, ['iPad']):
+    elif contains_keywords(m, ['iPad']):
         m = "iPad"
     elif contains_keywords(m, ["xiaomi", "mi"]):
         m = "MI"
@@ -139,9 +139,11 @@ def deal_with_m(m):
     elif contains_keywords(m, ['vivo']):
         m = 'vivo'
     elif contains_keywords(m, ['DJI']):
-        m =  'DJI'
+        m = 'DJI'
     elif contains_keywords(m, ['Hasselblad']):
         m = 'Hasselblad'
+    elif contains_keywords(m, ['nubia']):
+        m = 'Nubia'
     else:
         raise ValueError(f'convert failure: {m}')
         # return None
@@ -155,7 +157,8 @@ def tag_m(metadata):
     model = metadata.get('Model', None)
     if model is not None:
         return deal_with_m(model)
-    raise ValueError(f'convert failure: tag_m')
+    # raise ValueError(f'convert failure: tag_m {metadata}')
+    return None
 
 def tag_c(metadata):
     c = ""
