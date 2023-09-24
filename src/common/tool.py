@@ -8,7 +8,7 @@ import subprocess
 
 
 VIDEO_EXT_LIST = ['mp4', 'm4v', 'avi', 'mov']
-IMAGE_EXT_LIST = ['jpg', 'png', 'mpg', 'bmp', 'jpeg', 'heic','dng', 'gif']
+IMAGE_EXT_LIST = ['jpg', 'png', 'mpg', 'bmp', 'jpeg', 'heic','dng', 'arw', 'gif']
 FILE_EXT_LIST  = VIDEO_EXT_LIST + IMAGE_EXT_LIST
 
 def is_IMG(filename):
