@@ -5,19 +5,19 @@ import os
 import re
 from decimal import Decimal
 
-from src.common.tool import (
+from mediarchiver.common.tool import (
     FILE_EXT_LIST,
     IMAGE_EXT_LIST,
     get_media_date,
     is_IMG,
     is_VID,
 )
-from src.rename.metadata import (
+from mediarchiver.rename.metadata import (
     FileMetadataContext,
     build_file_metadata_context,
     get_video_metadate_ff,
 )
-from src.rename.options import RenameOptions
+from mediarchiver.rename.options import RenameOptions
 
 
 def get_md5(filename):

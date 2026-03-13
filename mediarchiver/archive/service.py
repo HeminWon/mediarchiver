@@ -5,14 +5,14 @@ import shutil
 
 from tqdm import tqdm
 
-from src.common.reporting import OperationLogger
-from src.common.tool import (
+from mediarchiver.common.reporting import OperationLogger
+from mediarchiver.common.tool import (
     FILE_EXT_LIST,
     get_media_date,
     get_media_date_from_metadata,
     load_metadata_result,
 )
-from src.common.workers import resolve_worker_count
+from mediarchiver.common.workers import resolve_worker_count
 
 MAX_METADATA_PREFETCH_WORKERS = 4
 

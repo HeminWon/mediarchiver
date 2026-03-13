@@ -3,7 +3,7 @@ import logging
 import os
 import re
 
-from src.common.external import (
+from mediarchiver.common.external import (
     CommandLoadResult,
     ExternalToolError,
     build_command_load_error,

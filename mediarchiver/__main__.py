@@ -1,4 +1,4 @@
-from src.archive.cli import main
+from mediarchiver.cli import main
 
 
 if __name__ == "__main__":

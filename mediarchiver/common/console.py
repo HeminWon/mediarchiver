@@ -28,3 +28,15 @@ def print_run_summary(operation, summary):
         )
         lines.append(f"- reasons: {top_reasons}")
     _print_lines(lines)
+
+
+def print_plan_summary(operation, summary):
+    lines = [
+        f"[{operation}] plan",
+        f"- total: {summary['total']}",
+        f"- ready: {summary['ready']}",
+        f"- skipped: {summary['skipped']}",
+        f"- conflict: {summary['conflict']}",
+        f"- invalid: {summary['invalid']}",
+    ]
+    _print_lines(lines)

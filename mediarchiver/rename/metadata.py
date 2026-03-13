@@ -4,14 +4,14 @@ from pathlib import Path
 import logging
 from typing import Any, Dict, Optional
 
-from src.common.external import (
+from mediarchiver.common.external import (
     CommandLoadResult,
     ExternalToolError,
     build_command_load_error,
     map_external_tool_error_code,
     run_json_command,
 )
-from src.common.tool import (
+from mediarchiver.common.tool import (
     get_media_date_from_metadata,
     is_IMG,
     is_VID,

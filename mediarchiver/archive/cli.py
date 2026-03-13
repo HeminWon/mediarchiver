@@ -1,14 +1,16 @@
 import argparse
 
-from src.archive.service import sort_files
-from src.common.console import print_run_header, print_run_summary
-from src.common.external import preflight_check_commands
-from src.common.logging_utils import configure_logging
-from src.common.workers import positive_int
+from mediarchiver.archive.service import sort_files
+from mediarchiver.common.console import print_run_header, print_run_summary
+from mediarchiver.common.external import preflight_check_commands
+from mediarchiver.common.logging_utils import configure_logging
+from mediarchiver.common.workers import positive_int
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(description="Process some material")
+    parser = argparse.ArgumentParser(
+        prog="mediarchiver archive", description="Process some material"
+    )
     parser.add_argument("source", type=str, help="source file path")
     parser.add_argument(
         "--destination",

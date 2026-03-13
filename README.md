@@ -12,15 +12,27 @@ The Nix shell provides `python`, `pytest`, `ruff`, `exiftool`, and `ffmpeg`.
 
 ## Run
 
+Install the package in editable mode if you want the `mediarchiver` command:
+
 ```bash
-python -m src.rename.rename <source>
-python -m src.rename.rename <source> --rename
-python -m src.rename.rename <source> --rename --dry-run
-python -m src.rename.rename <source> --include-formatted
-python -m src.rename.rename <source> --workers 2
-python -m src.archive.archive <source> --destination <target>
-python -m src.archive.archive <source> --destination <target> --dry-run
-python -m src.archive.archive <source> --destination <target> --workers 2
+python -m pip install -e .
+```
+
+Then use the unified CLI:
+
+```bash
+mediarchiver rename <source>
+mediarchiver rename <source> --rename
+mediarchiver rename <source> --rename --dry-run
+mediarchiver rename <source> --include-formatted
+mediarchiver rename <source> --workers 2
+mediarchiver archive <source> --destination <target>
+mediarchiver archive <source> --destination <target> --dry-run
+mediarchiver archive <source> --destination <target> --workers 2
+mediarchiver rename <source> --build-plan rename-plan.json
+mediarchiver rename --build-plan rename-plan.json --export-shell rename.sh
+mediarchiver rename --apply-plan rename-plan.json
+python -m mediarchiver rename <source>
 ```
 
 ## Parallel Metadata Reads
@@ -43,6 +55,8 @@ ruff check .
 - `rename.log`: rename workflow log
 - `archived.log`: archive workflow log
 - `rename_info.txt`: applied rename history
+- `rename-plan.json`: optional rename plan output
+- `rename.sh`: optional shell export generated from a plan
 - `rename_operations.jsonl`: structured rename operation report
 - `rename_conflicts.jsonl`: rename conflict report
 - `archive_operations.jsonl`: structured archive operation report

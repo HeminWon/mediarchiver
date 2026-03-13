@@ -18,8 +18,13 @@ dev = [
   "ruff>=0.11.0,<0.12.0",
 ]
 
-[tool.setuptools]
-packages = ["src", "src.archive", "src.common", "src.rename"]
+[project.scripts]
+mediarchiver = "mediarchiver.cli:main"
+mediarchiver-rename = "mediarchiver.rename.cli:main"
+mediarchiver-archive = "mediarchiver.archive.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["mediarchiver*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

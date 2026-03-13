@@ -1,8 +1,8 @@
 import json
 import pytest
 
-from src.archive import archive_obj, build_parser, get_quarter, sort_files
-from src.common.external import CommandLoadResult
+from mediarchiver.archive import archive_obj, build_parser, get_quarter, sort_files
+from mediarchiver.common.external import CommandLoadResult
 
 
 def test_archive_parser_supports_dry_run_flag():
@@ -39,11 +39,11 @@ def test_archive_obj_dry_run_records_preview(tmp_path, monkeypatch):
     media_file.write_text("demo", encoding="utf-8")
 
     monkeypatch.setattr(
-        "src.archive.service.get_archive_metadata_error",
+        "mediarchiver.archive.service.get_archive_metadata_error",
         lambda *_args, **_kwargs: (None, "2024:05:02 03:04:05"),
     )
 
-    from src.common.reporting import OperationLogger
+    from mediarchiver.common.reporting import OperationLogger
 
     archive_obj(
         str(source_dir),
@@ -73,7 +73,7 @@ def test_sort_files_records_conflict(tmp_path, monkeypatch):
     conflict_target.write_text("existing", encoding="utf-8")
 
     monkeypatch.setattr(
-        "src.archive.service.get_archive_metadata_error",
+        "mediarchiver.archive.service.get_archive_metadata_error",
         lambda *_args, **_kwargs: (None, "2024:05:02 03:04:05"),
     )
 
@@ -97,7 +97,7 @@ def test_archive_obj_records_metadata_load_failure(tmp_path, monkeypatch):
     media_file.write_text("demo", encoding="utf-8")
 
     monkeypatch.setattr(
-        "src.archive.service.get_archive_metadata_error",
+        "mediarchiver.archive.service.get_archive_metadata_error",
         lambda *_args, **_kwargs: (
             {
                 "reason": "exiftool_command_failed",
@@ -107,7 +107,7 @@ def test_archive_obj_records_metadata_load_failure(tmp_path, monkeypatch):
         ),
     )
 
-    from src.common.reporting import OperationLogger
+    from mediarchiver.common.reporting import OperationLogger
 
     archive_obj(
         str(source_dir),
@@ -140,7 +140,7 @@ def test_sort_files_prefetches_metadata_once_per_candidate(tmp_path, monkeypatch
         return None, "2024:05:02 03:04:05"
 
     monkeypatch.setattr(
-        "src.archive.service.get_archive_metadata_error", fake_get_archive_metadata_error
+        "mediarchiver.archive.service.get_archive_metadata_error", fake_get_archive_metadata_error
     )
 
     sort_files(str(source_dir), str(target_dir), dry_run=True)
@@ -164,14 +164,14 @@ def test_prefetch_archive_metadata_respects_requested_workers(monkeypatch):
         def map(self, func, items):
             return [func(item) for item in items]
 
-    monkeypatch.setattr("src.archive.service.ThreadPoolExecutor", DummyExecutor)
+    monkeypatch.setattr("mediarchiver.archive.service.ThreadPoolExecutor", DummyExecutor)
     monkeypatch.setattr(
-        "src.archive.service.get_archive_metadata_error",
+        "mediarchiver.archive.service.get_archive_metadata_error",
         lambda file_path: (None, f"date:{file_path}"),
     )
-    monkeypatch.setattr("src.archive.service.os.cpu_count", lambda: 8)
+    monkeypatch.setattr("mediarchiver.archive.service.os.cpu_count", lambda: 8)
 
-    from src.archive.service import prefetch_archive_metadata
+    from mediarchiver.archive.service import prefetch_archive_metadata
 
     result = prefetch_archive_metadata(["a.jpg", "b.jpg"], workers=2)
 
@@ -180,9 +180,9 @@ def test_prefetch_archive_metadata_respects_requested_workers(monkeypatch):
 
 
 def test_archive_prefetch_workers_are_clamped(monkeypatch):
-    monkeypatch.setattr("src.common.workers.os.cpu_count", lambda: 2)
+    monkeypatch.setattr("mediarchiver.common.workers.os.cpu_count", lambda: 2)
 
-    from src.archive.service import get_prefetch_workers
+    from mediarchiver.archive.service import get_prefetch_workers
 
     assert get_prefetch_workers(1, requested_workers=8) == 1
     assert get_prefetch_workers(5, requested_workers=8) == 2

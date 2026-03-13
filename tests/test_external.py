@@ -2,7 +2,7 @@ import subprocess
 
 import pytest
 
-from src.common.external import (
+from mediarchiver.common.external import (
     DependencyMissingError,
     ExternalToolExecutionError,
     ExternalToolTimeoutError,
@@ -14,7 +14,7 @@ from src.common.external import (
 
 def test_run_json_command_raises_dependency_missing(monkeypatch):
     _COMMAND_AVAILABILITY_CACHE.clear()
-    monkeypatch.setattr("src.common.external.shutil.which", lambda _name: None)
+    monkeypatch.setattr("mediarchiver.common.external.shutil.which", lambda _name: None)
 
     with pytest.raises(DependencyMissingError):
         run_json_command(["exiftool", "-j", "demo.jpg"], "exiftool")
@@ -22,12 +22,12 @@ def test_run_json_command_raises_dependency_missing(monkeypatch):
 
 def test_run_json_command_raises_timeout_error(monkeypatch):
     _COMMAND_AVAILABILITY_CACHE.clear()
-    monkeypatch.setattr("src.common.external.shutil.which", lambda _name: "/usr/bin/exiftool")
+    monkeypatch.setattr("mediarchiver.common.external.shutil.which", lambda _name: "/usr/bin/exiftool")
 
     def raise_timeout(*_args, **_kwargs):
         raise subprocess.TimeoutExpired(cmd=["exiftool"], timeout=15)
 
-    monkeypatch.setattr("src.common.external.subprocess.run", raise_timeout)
+    monkeypatch.setattr("mediarchiver.common.external.subprocess.run", raise_timeout)
 
     with pytest.raises(ExternalToolTimeoutError):
         run_json_command(["exiftool", "-j", "demo.jpg"], "exiftool")
@@ -35,7 +35,7 @@ def test_run_json_command_raises_timeout_error(monkeypatch):
 
 def test_run_json_command_raises_execution_error_for_nonzero_exit(monkeypatch):
     _COMMAND_AVAILABILITY_CACHE.clear()
-    monkeypatch.setattr("src.common.external.shutil.which", lambda _name: "/usr/bin/exiftool")
+    monkeypatch.setattr("mediarchiver.common.external.shutil.which", lambda _name: "/usr/bin/exiftool")
 
     def raise_called_process_error(*_args, **_kwargs):
         raise subprocess.CalledProcessError(
@@ -44,7 +44,7 @@ def test_run_json_command_raises_execution_error_for_nonzero_exit(monkeypatch):
             stderr="boom",
         )
 
-    monkeypatch.setattr("src.common.external.subprocess.run", raise_called_process_error)
+    monkeypatch.setattr("mediarchiver.common.external.subprocess.run", raise_called_process_error)
 
     with pytest.raises(ExternalToolExecutionError):
         run_json_command(["exiftool", "-j", "demo.jpg"], "exiftool")
@@ -58,7 +58,7 @@ def test_ensure_command_available_uses_cache(monkeypatch):
         return "/usr/bin/exiftool"
 
     _COMMAND_AVAILABILITY_CACHE.clear()
-    monkeypatch.setattr("src.common.external.shutil.which", fake_which)
+    monkeypatch.setattr("mediarchiver.common.external.shutil.which", fake_which)
 
     ensure_command_available("exiftool")
     ensure_command_available("exiftool")

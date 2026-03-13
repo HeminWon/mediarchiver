@@ -1,5 +1,5 @@
-from src.archive.cli import build_parser, main
-from src.archive.service import (
+from mediarchiver.archive.cli import build_parser, main
+from mediarchiver.archive.service import (
     archive_obj,
     get_archive_metadata_error,
     get_date,

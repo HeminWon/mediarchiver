@@ -1,21 +1,28 @@
 import json
 import pytest
 
-from src.rename import (
+from mediarchiver.cli import build_parser as build_root_parser
+from mediarchiver.rename import (
     RenameOptions,
+    apply_rename_plan,
     build_parser,
+    build_rename_plan,
+    export_rename_plan_shell,
     generate_new_filename,
+    load_rename_plan,
     need_ignore_file,
+    render_rename_plan_shell,
     scan_dir,
     tag_ff_encoder,
+    write_rename_plan,
 )
-from src.common.external import CommandLoadResult
-from src.rename.metadata import (
+from mediarchiver.common.external import CommandLoadResult
+from mediarchiver.rename.metadata import (
     FileMetadataContext,
     build_file_metadata_context,
     load_ffprobe_metadata_result,
 )
-from src.common.tool import load_metadata_result
+from mediarchiver.common.tool import load_metadata_result
 
 
 def test_parser_can_be_imported_without_side_effects():
@@ -24,6 +31,20 @@ def test_parser_can_be_imported_without_side_effects():
     assert args.source == "input-dir"
     assert args.include_formatted is False
     assert args.dry_run is False
+    assert args.build_plan is None
+    assert args.apply_plan is None
+
+
+def test_root_parser_supports_rename_and_archive_commands():
+    parser = build_root_parser()
+
+    rename_args = parser.parse_args(["rename", "input-dir", "--dry-run"])
+    archive_args = parser.parse_args(["archive", "input-dir", "--dry-run"])
+
+    assert rename_args.command == "rename"
+    assert rename_args.args == ["input-dir", "--dry-run"]
+    assert archive_args.command == "archive"
+    assert archive_args.args == ["input-dir", "--dry-run"]
 
 
 def test_parser_supports_include_formatted_flag():
@@ -48,6 +69,24 @@ def test_parser_rejects_non_positive_workers():
     parser = build_parser()
     with pytest.raises(SystemExit):
         parser.parse_args(["input-dir", "--workers", "0"])
+
+
+def test_parser_supports_build_plan_flag():
+    parser = build_parser()
+    args = parser.parse_args(["input-dir", "--build-plan", "rename-plan.json"])
+    assert args.build_plan == "rename-plan.json"
+
+
+def test_parser_supports_apply_plan_flag():
+    parser = build_parser()
+    args = parser.parse_args(["--apply-plan", "rename-plan.json"])
+    assert args.apply_plan == "rename-plan.json"
+
+
+def test_parser_supports_export_shell_flag():
+    parser = build_parser()
+    args = parser.parse_args(["--build-plan", "rename-plan.json", "--export-shell", "rename.sh"])
+    assert args.export_shell == "rename.sh"
 
 
 def test_need_ignore_file_skips_formatted_name_by_default(tmp_path):
@@ -98,10 +137,10 @@ def test_scan_dir_dry_run_writes_operation_log_without_renaming(tmp_path, monkey
     source_file.write_text("demo", encoding="utf-8")
 
     monkeypatch.setattr(
-        "src.rename.service.generate_new_filename",
+        "mediarchiver.rename.service.generate_new_filename",
         lambda *_args, **_kwargs: "20240102-030405_MiPh_1234.HEIC",
     )
-    monkeypatch.setattr("src.rename.service.get_md5", lambda *_args, **_kwargs: "abc123")
+    monkeypatch.setattr("mediarchiver.rename.service.get_md5", lambda *_args, **_kwargs: "abc123")
 
     scan_dir(str(tmp_path), RenameOptions(rename=True, dry_run=True))
 
@@ -115,15 +154,203 @@ def test_scan_dir_dry_run_writes_operation_log_without_renaming(tmp_path, monkey
     assert record["destination"].endswith("20240102-030405_MiPh_1234.HEIC")
 
 
+def test_build_rename_plan_writes_absolute_paths(tmp_path, monkeypatch):
+    source_file = tmp_path / "IMG_0001.HEIC"
+    source_file.write_text("demo", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "mediarchiver.rename.service.generate_new_filename",
+        lambda *_args, **_kwargs: "20240102-030405_MiPh_1234.HEIC",
+    )
+    monkeypatch.setattr("mediarchiver.rename.service.get_md5", lambda *_args, **_kwargs: "abc123")
+
+    plan = build_rename_plan(str(tmp_path), RenameOptions(), workers=2)
+
+    ready_item = next(item for item in plan.items if item.status == "ready")
+    assert ready_item.source == str(source_file)
+    assert ready_item.destination == str(tmp_path / "20240102-030405_MiPh_1234.HEIC")
+    assert plan.summary["ready"] == 1
+
+
+def test_write_and_load_rename_plan_round_trip(tmp_path):
+    plan_path = tmp_path / "rename-plan.json"
+
+    from mediarchiver.rename.plan import RENAME_PLAN_VERSION, RenamePlan, RenamePlanItem
+
+    plan = RenamePlan(
+        version=RENAME_PLAN_VERSION,
+        operation="rename",
+        source_dir=str(tmp_path.resolve()),
+        options={"loose": False, "include_formatted": False, "workers": None},
+        items=[
+            RenamePlanItem(
+                source=str((tmp_path / "a.jpg").resolve()),
+                destination=str((tmp_path / "b.jpg").resolve()),
+                action="rename",
+                status="ready",
+            )
+        ],
+    )
+
+    write_rename_plan(plan, plan_path)
+    loaded_plan = load_rename_plan(plan_path)
+
+    assert loaded_plan.to_dict() == plan.to_dict()
+
+
+def test_render_rename_plan_shell_outputs_ready_mv_commands(tmp_path):
+    from mediarchiver.rename.plan import RENAME_PLAN_VERSION, RenamePlan, RenamePlanItem
+
+    plan = RenamePlan(
+        version=RENAME_PLAN_VERSION,
+        operation="rename",
+        source_dir=str(tmp_path.resolve()),
+        options={},
+        items=[
+            RenamePlanItem(
+                source=str((tmp_path / "source file.jpg").resolve()),
+                destination=str((tmp_path / "dest file.jpg").resolve()),
+                action="rename",
+                status="ready",
+            ),
+            RenamePlanItem(
+                source=str((tmp_path / "skip.jpg").resolve()),
+                destination=None,
+                action="rename",
+                status="skipped",
+                reason="ignored",
+            ),
+        ],
+    )
+
+    shell_text = render_rename_plan_shell(plan)
+
+    assert shell_text.startswith("#!/usr/bin/env bash\nset -euo pipefail\n")
+    assert "mv '" in shell_text
+    assert "source file.jpg" in shell_text
+    assert "skip.jpg" not in shell_text
+
+
+def test_export_rename_plan_shell_writes_script(tmp_path):
+    shell_path = tmp_path / "rename.sh"
+
+    from mediarchiver.rename.plan import RENAME_PLAN_VERSION, RenamePlan, RenamePlanItem
+
+    plan = RenamePlan(
+        version=RENAME_PLAN_VERSION,
+        operation="rename",
+        source_dir=str(tmp_path.resolve()),
+        options={},
+        items=[
+            RenamePlanItem(
+                source=str((tmp_path / "a.jpg").resolve()),
+                destination=str((tmp_path / "b.jpg").resolve()),
+                action="rename",
+                status="ready",
+            )
+        ],
+    )
+
+    export_rename_plan_shell(plan, shell_path)
+
+    shell_text = shell_path.read_text(encoding="utf-8")
+    assert shell_text.endswith("\n")
+    assert "mv " in shell_text
+
+
+def test_apply_rename_plan_dry_run_previews_ready_items(tmp_path):
+    source_file = tmp_path / "IMG_0001.HEIC"
+    source_file.write_text("demo", encoding="utf-8")
+
+    from mediarchiver.rename.plan import RENAME_PLAN_VERSION, RenamePlan, RenamePlanItem
+
+    plan = RenamePlan(
+        version=RENAME_PLAN_VERSION,
+        operation="rename",
+        source_dir=str(tmp_path.resolve()),
+        options={},
+        items=[
+            RenamePlanItem(
+                source=str(source_file),
+                destination=str(tmp_path / "20240102-030405_MiPh_1234.HEIC"),
+                action="rename",
+                status="ready",
+                details={"md5": "abc123"},
+            )
+        ],
+    )
+
+    summary = apply_rename_plan(plan, dry_run=True)
+
+    assert source_file.exists()
+    assert summary["preview"] == 1
+
+
+def test_apply_rename_plan_renames_ready_items(tmp_path):
+    source_file = tmp_path / "IMG_0001.HEIC"
+    source_file.write_text("demo", encoding="utf-8")
+
+    from mediarchiver.rename.plan import RENAME_PLAN_VERSION, RenamePlan, RenamePlanItem
+
+    plan = RenamePlan(
+        version=RENAME_PLAN_VERSION,
+        operation="rename",
+        source_dir=str(tmp_path.resolve()),
+        options={},
+        items=[
+            RenamePlanItem(
+                source=str(source_file),
+                destination=str(tmp_path / "20240102-030405_MiPh_1234.HEIC"),
+                action="rename",
+                status="ready",
+                details={"md5": "abc123"},
+            )
+        ],
+    )
+
+    summary = apply_rename_plan(plan, dry_run=False)
+
+    assert not source_file.exists()
+    assert (tmp_path / "20240102-030405_MiPh_1234.HEIC").exists()
+    assert summary["success"] == 1
+
+
+def test_load_rename_plan_rejects_relative_paths(tmp_path):
+    plan_path = tmp_path / "rename-plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "operation": "rename",
+                "source_dir": "relative/source",
+                "options": {},
+                "summary": {"total": 1, "ready": 1, "skipped": 0, "conflict": 0, "invalid": 0},
+                "items": [
+                    {
+                        "source": "relative/file.jpg",
+                        "destination": "/tmp/out.jpg",
+                        "action": "rename",
+                        "status": "ready",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError):
+        load_rename_plan(plan_path)
+
+
 def test_scan_dir_rename_records_success(tmp_path, monkeypatch):
     source_file = tmp_path / "IMG_0001.HEIC"
     source_file.write_text("demo", encoding="utf-8")
 
     monkeypatch.setattr(
-        "src.rename.service.generate_new_filename",
+        "mediarchiver.rename.service.generate_new_filename",
         lambda *_args, **_kwargs: "20240102-030405_MiPh_1234.HEIC",
     )
-    monkeypatch.setattr("src.rename.service.get_md5", lambda *_args, **_kwargs: "abc123")
+    monkeypatch.setattr("mediarchiver.rename.service.get_md5", lambda *_args, **_kwargs: "abc123")
 
     summary = scan_dir(str(tmp_path), RenameOptions(rename=True))
 
@@ -173,9 +400,11 @@ def test_generate_new_filename_reuses_preloaded_metadata(tmp_path, monkeypatch):
             },
         )
 
-    monkeypatch.setattr("src.rename.metadata.load_metadata_result", fake_load_metadata_result)
     monkeypatch.setattr(
-        "src.rename.metadata.load_ffprobe_metadata_result",
+        "mediarchiver.rename.metadata.load_metadata_result", fake_load_metadata_result
+    )
+    monkeypatch.setattr(
+        "mediarchiver.rename.metadata.load_ffprobe_metadata_result",
         fake_load_ffprobe_metadata_result,
     )
 
@@ -206,9 +435,11 @@ def test_build_file_metadata_context_loads_video_metadata_once(tmp_path, monkeyp
             data={"streams": [{"codec_type": "video", "width": 1920, "height": 1080}]},
         )
 
-    monkeypatch.setattr("src.rename.metadata.load_metadata_result", fake_load_metadata_result)
     monkeypatch.setattr(
-        "src.rename.metadata.load_ffprobe_metadata_result",
+        "mediarchiver.rename.metadata.load_metadata_result", fake_load_metadata_result
+    )
+    monkeypatch.setattr(
+        "mediarchiver.rename.metadata.load_ffprobe_metadata_result",
         fake_load_ffprobe_metadata_result,
     )
 
@@ -225,7 +456,7 @@ def test_load_metadata_result_returns_structured_error(monkeypatch):
     def raise_failure(*_args, **_kwargs):
         raise TypeError("boom")
 
-    monkeypatch.setattr("src.common.tool.run_json_command", raise_failure)
+    monkeypatch.setattr("mediarchiver.common.tool.run_json_command", raise_failure)
 
     result = load_metadata_result("demo.jpg")
 
@@ -236,12 +467,12 @@ def test_load_metadata_result_returns_structured_error(monkeypatch):
 
 
 def test_load_ffprobe_metadata_result_returns_structured_error(monkeypatch):
-    from src.common.external import ExternalToolExecutionError
+    from mediarchiver.common.external import ExternalToolExecutionError
 
     def raise_failure(*_args, **_kwargs):
         raise ExternalToolExecutionError("ffprobe", "ffprobe failed")
 
-    monkeypatch.setattr("src.rename.metadata.run_json_command", raise_failure)
+    monkeypatch.setattr("mediarchiver.rename.metadata.run_json_command", raise_failure)
 
     result = load_ffprobe_metadata_result("clip.mov")
 
@@ -254,8 +485,8 @@ def test_scan_dir_records_metadata_load_failure_reason(tmp_path, monkeypatch):
     source_file = tmp_path / "IMG_0001.HEIC"
     source_file.write_text("demo", encoding="utf-8")
 
-    from src.common.external import build_command_load_error
-    from src.rename.metadata import FileMetadataContext
+    from mediarchiver.common.external import build_command_load_error
+    from mediarchiver.rename.metadata import FileMetadataContext
 
     def fake_context(_file_path, parallel_reads=True):
         return FileMetadataContext(
@@ -270,7 +501,7 @@ def test_scan_dir_records_metadata_load_failure_reason(tmp_path, monkeypatch):
             is_live_photo_video=None,
         )
 
-    monkeypatch.setattr("src.rename.service.build_file_metadata_context", fake_context)
+    monkeypatch.setattr("mediarchiver.rename.service.build_file_metadata_context", fake_context)
 
     scan_dir(str(tmp_path), RenameOptions(rename=True))
 
@@ -305,12 +536,12 @@ def test_scan_dir_prefetches_contexts_once_per_candidate(tmp_path, monkeypatch):
             is_live_photo_video=False,
         )
 
-    monkeypatch.setattr("src.rename.service.build_file_metadata_context", fake_context)
+    monkeypatch.setattr("mediarchiver.rename.service.build_file_metadata_context", fake_context)
     monkeypatch.setattr(
-        "src.rename.service.generate_new_filename",
+        "mediarchiver.rename.service.generate_new_filename",
         lambda *_args, **_kwargs: "20240102-030405_MiPh_1234.HEIC",
     )
-    monkeypatch.setattr("src.rename.service.get_md5", lambda *_args, **_kwargs: "abc123")
+    monkeypatch.setattr("mediarchiver.rename.service.get_md5", lambda *_args, **_kwargs: "abc123")
 
     scan_dir(str(tmp_path), RenameOptions(rename=True, dry_run=True))
 
@@ -348,11 +579,11 @@ def test_prefetch_file_contexts_respects_requested_workers(monkeypatch):
             is_live_photo_video=False,
         )
 
-    monkeypatch.setattr("src.rename.service.ThreadPoolExecutor", DummyExecutor)
-    monkeypatch.setattr("src.rename.service.build_file_metadata_context", fake_context)
-    monkeypatch.setattr("src.rename.service.os.cpu_count", lambda: 8)
+    monkeypatch.setattr("mediarchiver.rename.service.ThreadPoolExecutor", DummyExecutor)
+    monkeypatch.setattr("mediarchiver.rename.service.build_file_metadata_context", fake_context)
+    monkeypatch.setattr("mediarchiver.rename.service.os.cpu_count", lambda: 8)
 
-    from src.rename.service import prefetch_file_contexts
+    from mediarchiver.rename.service import prefetch_file_contexts
 
     result = prefetch_file_contexts(["a.jpg", "b.jpg", "c.jpg"], workers=2)
 
@@ -362,9 +593,9 @@ def test_prefetch_file_contexts_respects_requested_workers(monkeypatch):
 
 
 def test_rename_prefetch_workers_are_clamped(monkeypatch):
-    monkeypatch.setattr("src.common.workers.os.cpu_count", lambda: 2)
+    monkeypatch.setattr("mediarchiver.common.workers.os.cpu_count", lambda: 2)
 
-    from src.rename.service import get_prefetch_workers
+    from mediarchiver.rename.service import get_prefetch_workers
 
     assert get_prefetch_workers(1, requested_workers=8) == 1
     assert get_prefetch_workers(5, requested_workers=8) == 2
