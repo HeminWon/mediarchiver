@@ -5,11 +5,26 @@ import shutil
 from tqdm import tqdm
 
 from src.common.reporting import OperationLogger
-from src.common.tool import FILE_EXT_LIST, get_media_date
+from src.common.tool import (
+    FILE_EXT_LIST,
+    get_media_date,
+    get_media_date_from_metadata,
+    load_metadata_result,
+)
 
 
 def get_date(filename):
     return get_media_date(filename)
+
+
+def get_archive_metadata_error(file_path):
+    metadata_result = load_metadata_result(file_path)
+    if metadata_result.ok:
+        return None, get_media_date_from_metadata(metadata_result.data)
+    return {
+        "reason": f"exiftool_{metadata_result.error_code}",
+        "details": {"message": metadata_result.error_message},
+    }, None
 
 
 def get_quarter(date):
@@ -31,9 +46,7 @@ def archive_obj(folder_path, target_path, obj, dry_run=False, report_logger=None
     file_path = os.path.join(folder_path, obj)
     if os.path.isdir(file_path):
         if report_logger is not None:
-            report_logger.record(
-                "archive", file_path, status="skipped", reason="directory"
-            )
+            report_logger.record("archive", file_path, status="skipped", reason="directory")
         return
     ext = os.path.splitext(obj)[1][1:]
     if ext.lower() not in FILE_EXT_LIST:
@@ -43,22 +56,29 @@ def archive_obj(folder_path, target_path, obj, dry_run=False, report_logger=None
             )
         return
 
-    date = get_date(file_path)
+    metadata_error, date = get_archive_metadata_error(file_path)
+    if metadata_error is not None:
+        if report_logger is not None:
+            report_logger.record(
+                "archive",
+                file_path,
+                status="skipped",
+                reason=metadata_error["reason"],
+                details=metadata_error["details"],
+            )
+        return
+
     if date is None:
         logging.info(f"date is invalid: {obj}")
         if report_logger is not None:
-            report_logger.record(
-                "archive", file_path, status="skipped", reason="invalid_date"
-            )
+            report_logger.record("archive", file_path, status="skipped", reason="invalid_date")
         return
 
     year = date[:4]
     quarter = get_quarter(date)
     if quarter is None:
         if report_logger is not None:
-            report_logger.record(
-                "archive", file_path, status="skipped", reason="invalid_quarter"
-            )
+            report_logger.record("archive", file_path, status="skipped", reason="invalid_quarter")
         return
 
     subfolder_path = os.path.join(target_path, year, quarter)
@@ -93,9 +113,7 @@ def archive_obj(folder_path, target_path, obj, dry_run=False, report_logger=None
     shutil.move(file_path, subfolder_path)
     logging.info(f"Moved {obj} from {file_path} to {target_file_path}")
     if report_logger is not None:
-        report_logger.record(
-            "archive", file_path, destination=target_file_path, status="success"
-        )
+        report_logger.record("archive", file_path, destination=target_file_path, status="success")
 
 
 def sort_files(folder_path, target_path, dry_run=False):
@@ -103,7 +121,6 @@ def sort_files(folder_path, target_path, dry_run=False):
     process_objs = tqdm(os.listdir(folder_path))
     for obj in process_objs:
         process_objs.set_description("Processing " + obj)
-        archive_obj(
-            folder_path, target_path, obj, dry_run=dry_run, report_logger=report_logger
-        )
+        archive_obj(folder_path, target_path, obj, dry_run=dry_run, report_logger=report_logger)
     process_objs.close()
+    return report_logger.summary.as_dict()

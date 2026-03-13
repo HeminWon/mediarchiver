@@ -4,6 +4,7 @@ import os
 from tqdm import tqdm
 
 from src.common.reporting import OperationLogger
+from src.rename.metadata import build_file_metadata_context, get_context_load_error
 from src.rename.options import RenameOptions
 from src.rename.rules import (
     generate_new_filename,
@@ -30,8 +31,16 @@ def scan_dir(source, options=None):
     info_file = os.path.join(source, "rename_info.txt")
     report_logger = OperationLogger(source, "rename")
     md5s = list_md5(info_file)
+    context_cache = {}
 
     open(info_file, "a", encoding="utf-8").close()
+
+    def get_file_context(file_path):
+        context = context_cache.get(file_path)
+        if context is None:
+            context = build_file_metadata_context(file_path)
+            context_cache[file_path] = context
+        return context
 
     with open(info_file, "a", encoding="utf-8") as file_txt:
         process_objs = tqdm(os.listdir(source))
@@ -39,16 +48,27 @@ def scan_dir(source, options=None):
             process_objs.set_description("Processing " + obj)
             file_path = os.path.join(source, obj)
             if need_ignore_file(source, obj, options):
-                report_logger.record(
-                    "rename", file_path, status="skipped", reason="ignored"
-                )
+                report_logger.record("rename", file_path, status="skipped", reason="ignored")
                 continue
 
-            new_file_name = generate_new_filename(source, obj, options)
-            if new_file_name is None:
+            file_context = get_file_context(file_path)
+            load_error = get_context_load_error(file_context)
+            if load_error is not None:
                 report_logger.record(
-                    "rename", file_path, status="skipped", reason="rule_rejected"
+                    "rename",
+                    file_path,
+                    status="skipped",
+                    reason=load_error["reason"],
+                    details=load_error["details"],
                 )
+                continue
+            new_file_name = generate_new_filename(
+                file_context,
+                options=options,
+                context_provider=get_file_context,
+            )
+            if new_file_name is None:
+                report_logger.record("rename", file_path, status="skipped", reason="rule_rejected")
                 continue
             if is_formatted_file_name(new_file_name) is False:
                 logging.error(f"formated file name is error: {obj} => {new_file_name}")
@@ -63,9 +83,7 @@ def scan_dir(source, options=None):
 
             new_file_path = os.path.join(source, new_file_name)
             if os.path.exists(new_file_path):
-                logging.warning(
-                    f"File already exists, can not rename {obj} => {new_file_name}"
-                )
+                logging.warning(f"File already exists, can not rename {obj} => {new_file_name}")
                 report_logger.record(
                     "rename",
                     file_path,
@@ -114,3 +132,4 @@ def scan_dir(source, options=None):
                 details={"md5": md5},
             )
         process_objs.close()
+    return report_logger.summary.as_dict()

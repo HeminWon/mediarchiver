@@ -1,6 +1,7 @@
 import argparse
 
-from src.common.external import ensure_command_available
+from src.common.console import print_run_header, print_run_summary
+from src.common.external import preflight_check_commands
 from src.common.logging_utils import configure_logging
 from src.rename.options import RenameOptions
 from src.rename.service import scan_dir
@@ -45,8 +46,7 @@ def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
     configure_logging("rename.log")
-    ensure_command_available("exiftool")
-    ensure_command_available("ffprobe")
+    preflight_check_commands(["exiftool", "ffprobe"])
 
     options = RenameOptions(
         loose=args.loose,
@@ -54,9 +54,15 @@ def main(argv=None):
         include_formatted=args.include_formatted,
         dry_run=args.dry_run,
     )
-    print(f"source: {args.source}")
-    print(f"--loose: {options.loose}")
-    print(f"--rename: {options.rename}")
-    print(f"--include-formatted: {options.include_formatted}")
-    print(f"--dry-run: {options.dry_run}")
-    scan_dir(args.source, options)
+    print_run_header(
+        "rename",
+        {
+            "source": args.source,
+            "loose": options.loose,
+            "rename": options.rename,
+            "include_formatted": options.include_formatted,
+            "dry_run": options.dry_run,
+        },
+    )
+    summary = scan_dir(args.source, options)
+    print_run_summary("rename", summary)

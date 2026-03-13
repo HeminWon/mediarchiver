@@ -1,6 +1,6 @@
 import json
 
-from src.archive.archive import archive_obj, build_parser, get_quarter, sort_files
+from src.archive import archive_obj, build_parser, get_quarter, sort_files
 
 
 def test_archive_parser_supports_dry_run_flag():
@@ -25,7 +25,8 @@ def test_archive_obj_dry_run_records_preview(tmp_path, monkeypatch):
     media_file.write_text("demo", encoding="utf-8")
 
     monkeypatch.setattr(
-        "src.archive.service.get_date", lambda *_args, **_kwargs: "2024:05:02 03:04:05"
+        "src.archive.service.get_archive_metadata_error",
+        lambda *_args, **_kwargs: (None, "2024:05:02 03:04:05"),
     )
 
     from src.common.reporting import OperationLogger
@@ -40,10 +41,7 @@ def test_archive_obj_dry_run_records_preview(tmp_path, monkeypatch):
 
     assert media_file.exists()
     operations = (
-        (source_dir / "archive_operations.jsonl")
-        .read_text(encoding="utf-8")
-        .strip()
-        .splitlines()
+        (source_dir / "archive_operations.jsonl").read_text(encoding="utf-8").strip().splitlines()
     )
     record = json.loads(operations[-1])
     assert record["status"] == "preview"
@@ -61,17 +59,53 @@ def test_sort_files_records_conflict(tmp_path, monkeypatch):
     conflict_target.write_text("existing", encoding="utf-8")
 
     monkeypatch.setattr(
-        "src.archive.service.get_date", lambda *_args, **_kwargs: "2024:05:02 03:04:05"
+        "src.archive.service.get_archive_metadata_error",
+        lambda *_args, **_kwargs: (None, "2024:05:02 03:04:05"),
     )
 
-    sort_files(str(source_dir), str(target_dir), dry_run=False)
+    summary = sort_files(str(source_dir), str(target_dir), dry_run=False)
 
     conflicts = (
-        (source_dir / "archive_conflicts.jsonl")
-        .read_text(encoding="utf-8")
-        .strip()
-        .splitlines()
+        (source_dir / "archive_conflicts.jsonl").read_text(encoding="utf-8").strip().splitlines()
     )
     record = json.loads(conflicts[-1])
     assert record["status"] == "conflict"
     assert record["reason"] == "destination_exists"
+    assert summary["conflict"] == 1
+
+
+def test_archive_obj_records_metadata_load_failure(tmp_path, monkeypatch):
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    media_file = source_dir / "IMG_0001.JPG"
+    media_file.write_text("demo", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "src.archive.service.get_archive_metadata_error",
+        lambda *_args, **_kwargs: (
+            {
+                "reason": "exiftool_command_failed",
+                "details": {"message": "Command failed"},
+            },
+            None,
+        ),
+    )
+
+    from src.common.reporting import OperationLogger
+
+    archive_obj(
+        str(source_dir),
+        str(target_dir),
+        media_file.name,
+        report_logger=OperationLogger(source_dir, "archive"),
+    )
+
+    operations = (
+        (source_dir / "archive_operations.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    )
+    record = json.loads(operations[-1])
+    assert record["status"] == "skipped"
+    assert record["reason"] == "exiftool_command_failed"
+    assert record["details"]["message"] == "Command failed"

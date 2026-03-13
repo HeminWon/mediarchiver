@@ -9,12 +9,14 @@ from src.common.tool import (
     FILE_EXT_LIST,
     IMAGE_EXT_LIST,
     get_media_date,
-    get_metadata,
     is_IMG,
-    is_live_photo_VID,
     is_VID,
 )
-from src.rename.metadata import get_metadata_ff, get_video_metadate_ff
+from src.rename.metadata import (
+    FileMetadataContext,
+    build_file_metadata_context,
+    get_video_metadate_ff,
+)
 from src.rename.options import RenameOptions
 
 
@@ -32,10 +34,7 @@ def get_md5(filename):
 def is_formatted_file_name(filename):
     if filename is None:
         return False
-    return (
-        re.match(r"^\d{8}-\d{6}_([a-zA-Z0-9.-]+_)?\d{4}\.[a-zA-Z0-9]+$", filename)
-        is not None
-    )
+    return re.match(r"^\d{8}-\d{6}_([a-zA-Z0-9.-]+_)?\d{4}\.[a-zA-Z0-9]+$", filename) is not None
 
 
 def contains_keywords(text, keywords):
@@ -48,9 +47,7 @@ def live_photo_match_image(folder_path, filter_num):
     pattern_str = rf"{filter_num}\.({'|'.join(IMAGE_EXT_LIST)})$".replace(" ", "")
     pattern = re.compile(pattern_str, re.IGNORECASE)
     image_files = [
-        file_name
-        for file_name in glob.glob(folder_path + "/*")
-        if pattern.search(file_name)
+        file_name for file_name in glob.glob(folder_path + "/*") if pattern.search(file_name)
     ]
     return image_files[0] if image_files else None
 
@@ -167,9 +164,7 @@ def tag_ff_resolutation(metadata):
     video_stream = get_video_metadate_ff(metadata)
     if video_stream is None:
         return None
-    return calculate_resolution(
-        video_stream.get("width", None), video_stream.get("height", None)
-    )
+    return calculate_resolution(video_stream.get("width", None), video_stream.get("height", None))
 
 
 def remove_exponent(num):
@@ -235,50 +230,53 @@ def tag_ff_encoder(metadata):
 
 def formatted_tags(filename, options=None):
     options = options or RenameOptions()
-    if is_live_photo_VID(filename):
-        raise ValueError(f"livephoto rename failure: {filename}")
-    if is_IMG(filename):
-        return formated_tags_IMG(filename)
-    if is_VID(filename):
-        return formated_tags_VID(filename, options)
+    context = ensure_file_context(filename)
+    if context.is_live_photo_video:
+        raise ValueError(f"livephoto rename failure: {context.file_path}")
+    if context.is_image:
+        return formated_tags_IMG(context)
+    if context.is_video:
+        return formated_tags_VID(context, options)
     return None
 
 
 def formated_tags_VID(filename, options=None):
     options = options or RenameOptions()
-    metadata_ff = get_metadata_ff(filename)
+    context = ensure_file_context(filename)
+    file_path = context.file_path
+    metadata_ff = context.ffprobe_metadata
     if metadata_ff is None:
         return None
-    metadata = get_metadata(filename)
+    metadata = context.exif_metadata
     if metadata is None:
         return None
     tags = []
     make = tag_m(metadata)
     if make is None:
         if options.loose is False:
-            logging.error(f"[exiftool] make is invalid: {filename}")
+            logging.error(f"[exiftool] make is invalid: {file_path}")
             return None
     else:
         tags.append(make)
     resolution = tag_ff_resolutation(metadata_ff)
     if resolution is None:
-        logging.error(f"[ffmpeg] resolution is invalid: {filename}")
+        logging.error(f"[ffmpeg] resolution is invalid: {file_path}")
         return None
     tags.append(resolution)
     fps = tag_ff_frame_rate(metadata_ff)
     if fps is None:
-        logging.error(f"[ffmpeg] fps is invalid: {filename}")
+        logging.error(f"[ffmpeg] fps is invalid: {file_path}")
         return None
     tags.append(fps)
     log_tag = tag_ff_log(metadata_ff)
     if log_tag is None:
-        logging.warning(f"[ffmpeg] log/raw is invalid: {filename}")
+        logging.warning(f"[ffmpeg] log/raw is invalid: {file_path}")
     else:
         tags.append(log_tag)
     encoder = tag_ff_encoder(metadata_ff)
     if encoder is None:
         if options.loose is False:
-            logging.error(f"[ffmpeg] encoder is invalid: {filename}")
+            logging.error(f"[ffmpeg] encoder is invalid: {file_path}")
             return None
     else:
         tags.append(encoder)
@@ -286,7 +284,9 @@ def formated_tags_VID(filename, options=None):
 
 
 def formated_tags_IMG(filename):
-    metadata = get_metadata(filename)
+    context = ensure_file_context(filename)
+    file_path = context.file_path
+    metadata = context.exif_metadata
     if metadata is None:
         return None
     tags = []
@@ -294,7 +294,7 @@ def formated_tags_IMG(filename):
     if make is not None:
         tags.append(make)
     else:
-        logging.warning(f"[exiftool] make is invalid: {filename}")
+        logging.warning(f"[exiftool] make is invalid: {file_path}")
     lens = tag_l(metadata)
     if lens is not None:
         tags.append(lens)
@@ -305,6 +305,8 @@ def formated_tags_IMG(filename):
 
 
 def get_date(filename):
+    if isinstance(filename, FileMetadataContext):
+        return filename.media_date
     return get_media_date(filename)
 
 
@@ -326,10 +328,22 @@ def need_ignore_file(folder_path, obj, options=None):
     return False
 
 
-def generate_new_filename_prefix(folder_path, obj, options=None):
+def ensure_file_context(file_or_context):
+    if isinstance(file_or_context, FileMetadataContext):
+        return file_or_context
+    return build_file_metadata_context(file_or_context)
+
+
+def generate_new_filename_prefix(folder_path, obj=None, options=None):
     options = options or RenameOptions()
-    file_path = os.path.join(folder_path, obj)
-    date = get_date(file_path)
+    if isinstance(folder_path, FileMetadataContext):
+        context = folder_path
+        obj = context.file_name
+    else:
+        if obj is None:
+            raise ValueError("obj is required when folder_path is not a FileMetadataContext")
+        context = build_file_metadata_context(os.path.join(folder_path, obj))
+    date = get_date(context)
     if date is None:
         logging.error(f"date is invalid: {obj}")
         return None
@@ -338,14 +352,14 @@ def generate_new_filename_prefix(folder_path, obj, options=None):
     if formatted is None:
         return None
     items.append(formatted)
-    tags = formatted_tags(file_path, options)
+    tags = formatted_tags(context, options)
     if tags is None:
         if options.loose is False:
             logging.error(f"tags is invalid: {obj}")
             return None
     else:
         items.append(tags)
-    number = file_number(file_path, True)
+    number = file_number(context.file_path, True)
     if number is None:
         logging.error(f"number is invalid: {obj}")
         return None
@@ -353,22 +367,27 @@ def generate_new_filename_prefix(folder_path, obj, options=None):
     return "_".join(items)
 
 
-def generate_new_filename(folder_path, obj, options=None):
+def generate_new_filename(folder_path, obj=None, options=None, context_provider=None):
     options = options or RenameOptions()
-    file_path = os.path.join(folder_path, obj)
-    _, ext = os.path.splitext(obj)
-    if is_live_photo_VID(file_path):
-        live_photo_num = file_number(file_path)
+    if isinstance(folder_path, FileMetadataContext):
+        context = folder_path
+        obj = context.file_name
+    else:
+        if obj is None:
+            raise ValueError("obj is required when folder_path is not a FileMetadataContext")
+        context = build_file_metadata_context(os.path.join(folder_path, obj))
+    ext = context.extension
+    if context.is_live_photo_video:
+        live_photo_num = file_number(context.file_path)
         if live_photo_num is None:
             logging.error(f"livephoto number is error, file: {obj}")
             return None
-        target_file = live_photo_match_image(os.path.dirname(file_path), live_photo_num)
+        target_file = live_photo_match_image(os.path.dirname(context.file_path), live_photo_num)
         if target_file is None:
             logging.error(f"livephoto not found match image, file: {obj}")
             return None
-        target_prefix = generate_new_filename_prefix(
-            os.path.dirname(target_file), os.path.basename(target_file), options
-        )
+        provider = context_provider or build_file_metadata_context
+        target_prefix = generate_new_filename_prefix(provider(target_file), options=options)
         return target_prefix + ext if target_prefix is not None else None
-    prefix = generate_new_filename_prefix(folder_path, obj, options)
+    prefix = generate_new_filename_prefix(context, options=options)
     return prefix + ext if prefix is not None else None

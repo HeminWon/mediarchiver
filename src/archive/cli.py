@@ -1,7 +1,8 @@
 import argparse
 
 from src.archive.service import sort_files
-from src.common.external import ensure_command_available
+from src.common.console import print_run_header, print_run_summary
+from src.common.external import preflight_check_commands
 from src.common.logging_utils import configure_logging
 
 
@@ -28,8 +29,14 @@ def main(argv=None):
     args = parser.parse_args(argv)
     destination = args.destination if args.destination else args.source
     configure_logging("archived.log")
-    ensure_command_available("exiftool")
-    print("source:" + args.source)
-    print("destination:" + destination)
-    print(f"--dry-run: {args.dry_run}")
-    sort_files(args.source, destination, dry_run=args.dry_run)
+    preflight_check_commands(["exiftool"])
+    print_run_header(
+        "archive",
+        {
+            "source": args.source,
+            "destination": destination,
+            "dry_run": args.dry_run,
+        },
+    )
+    summary = sort_files(args.source, destination, dry_run=args.dry_run)
+    print_run_summary("archive", summary)
