@@ -1,0 +1,109 @@
+import logging
+import os
+import shutil
+
+from tqdm import tqdm
+
+from src.common.reporting import OperationLogger
+from src.common.tool import FILE_EXT_LIST, get_media_date
+
+
+def get_date(filename):
+    return get_media_date(filename)
+
+
+def get_quarter(date):
+    if date is None:
+        return None
+    month = int(date[5:7])
+    if month in [1, 2, 3]:
+        return "Q1"
+    if month in [4, 5, 6]:
+        return "Q2"
+    if month in [7, 8, 9]:
+        return "Q3"
+    if month in [10, 11, 12]:
+        return "Q4"
+    return None
+
+
+def archive_obj(folder_path, target_path, obj, dry_run=False, report_logger=None):
+    file_path = os.path.join(folder_path, obj)
+    if os.path.isdir(file_path):
+        if report_logger is not None:
+            report_logger.record(
+                "archive", file_path, status="skipped", reason="directory"
+            )
+        return
+    ext = os.path.splitext(obj)[1][1:]
+    if ext.lower() not in FILE_EXT_LIST:
+        if report_logger is not None:
+            report_logger.record(
+                "archive", file_path, status="skipped", reason="unsupported_extension"
+            )
+        return
+
+    date = get_date(file_path)
+    if date is None:
+        logging.info(f"date is invalid: {obj}")
+        if report_logger is not None:
+            report_logger.record(
+                "archive", file_path, status="skipped", reason="invalid_date"
+            )
+        return
+
+    year = date[:4]
+    quarter = get_quarter(date)
+    if quarter is None:
+        if report_logger is not None:
+            report_logger.record(
+                "archive", file_path, status="skipped", reason="invalid_quarter"
+            )
+        return
+
+    subfolder_path = os.path.join(target_path, year, quarter)
+    target_file_path = os.path.join(subfolder_path, obj)
+
+    if os.path.exists(target_file_path):
+        logging.warning(
+            f"File already exists, can not move {obj} from {file_path} to {target_file_path}"
+        )
+        if report_logger is not None:
+            report_logger.record(
+                "archive",
+                file_path,
+                destination=target_file_path,
+                status="conflict",
+                reason="destination_exists",
+            )
+        return
+
+    if dry_run:
+        if report_logger is not None:
+            report_logger.record(
+                "archive",
+                file_path,
+                destination=target_file_path,
+                status="preview",
+                reason="dry_run",
+            )
+        return
+
+    os.makedirs(subfolder_path, exist_ok=True)
+    shutil.move(file_path, subfolder_path)
+    logging.info(f"Moved {obj} from {file_path} to {target_file_path}")
+    if report_logger is not None:
+        report_logger.record(
+            "archive", file_path, destination=target_file_path, status="success"
+        )
+
+
+def sort_files(folder_path, target_path, dry_run=False):
+    report_logger = OperationLogger(folder_path, "archive")
+    process_objs = tqdm(os.listdir(folder_path))
+    for obj in process_objs:
+        process_objs.set_description("Processing " + obj)
+        archive_obj(
+            folder_path, target_path, obj, dry_run=dry_run, report_logger=report_logger
+        )
+    process_objs.close()
