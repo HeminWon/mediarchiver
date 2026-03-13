@@ -23,6 +23,7 @@ from mediarchiver.rename.metadata import (
     load_ffprobe_metadata_result,
 )
 from mediarchiver.rename.rules import (
+    calculate_resolution,
     clear_md5_cache,
     deal_with_m,
     file_number,
@@ -30,6 +31,8 @@ from mediarchiver.rename.rules import (
     get_md5,
     need_ignore_file,
     tag_ff_encoder,
+    tag_ff_log,
+    tag_ff_resolutation,
 )
 
 
@@ -188,6 +191,34 @@ def test_deal_with_m_raises_for_unknown_make():
         deal_with_m("Unknown Camera Brand")
 
 
+def test_calculate_resolution_maps_known_and_unknown_sizes():
+    assert calculate_resolution(1920, 1080) == "FHD"
+    assert calculate_resolution(1000, 500) == "1000x500"
+
+
+def test_tag_ff_resolution_reads_video_dimensions():
+    assert (
+        tag_ff_resolutation({"streams": [{"codec_type": "video", "width": 3840, "height": 2160}]})
+        == "4K"
+    )
+
+
+def test_tag_ff_log_maps_known_side_data_types():
+    assert (
+        tag_ff_log(
+            {
+                "streams": [
+                    {
+                        "codec_type": "video",
+                        "side_data_list": [{"side_data_type": "DOVI configuration record"}],
+                    }
+                ]
+            }
+        )
+        == "DOVI"
+    )
+
+
 def test_tag_ff_encoder_maps_h264_and_avc_to_avc():
     assert (
         tag_ff_encoder({"streams": [{"codec_type": "video", "tags": {"encoder": "h264"}}]}) == "AVC"
@@ -204,6 +235,10 @@ def test_tag_ff_encoder_maps_h265_and_hevc_to_hevc():
     )
     assert (
         tag_ff_encoder({"streams": [{"codec_type": "video", "tags": {"encoder": "hevc"}}]})
+        == "HEVC"
+    )
+    assert (
+        tag_ff_encoder({"streams": [{"codec_type": "video", "tags": {"encoder": "libx265"}}]})
         == "HEVC"
     )
 

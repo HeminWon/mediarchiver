@@ -120,11 +120,34 @@ MAKE_MODEL_TAG_RULES = [
     (["nubia"], "Nubia"),
 ]
 
+FF_ENCODER_TAG_RULES = [
+    (["h.264", "h264", "avc", "x264"], "AVC"),
+    (["h.265", "h265", "hevc", "x265"], "HEVC"),
+]
+
+FF_LOG_TAG_RULES = [(["DOVI"], "DOVI")]
+
+RESOLUTION_TAGS = {
+    (720, 480): "SD",
+    (1280, 720): "HD",
+    (1920, 1080): "FHD",
+    (2048, 1080): "2K",
+    (3840, 2160): "4K",
+    (7680, 4320): "8K",
+}
+
+
+def match_keyword_rules(value, rules):
+    for keywords, normalized_tag in rules:
+        if contains_keywords(value, keywords):
+            return normalized_tag
+    return None
+
 
 def deal_with_m(make_or_model):
-    for keywords, normalized_tag in MAKE_MODEL_TAG_RULES:
-        if contains_keywords(make_or_model, keywords):
-            return "M" + normalized_tag
+    normalized_tag = match_keyword_rules(make_or_model, MAKE_MODEL_TAG_RULES)
+    if normalized_tag is not None:
+        return "M" + normalized_tag
     raise ValueError(f"convert failure: {make_or_model}")
 
 
@@ -158,15 +181,7 @@ def tag_l(metadata):
 
 
 def calculate_resolution(width, height):
-    resolutions = {
-        (720, 480): "SD",
-        (1280, 720): "HD",
-        (1920, 1080): "FHD",
-        (2048, 1080): "2K",
-        (3840, 2160): "4K",
-        (7680, 4320): "8K",
-    }
-    return resolutions.get((width, height), f"{width}x{height}")
+    return RESOLUTION_TAGS.get((width, height), f"{width}x{height}")
 
 
 def tag_ff_resolutation(metadata):
@@ -211,9 +226,7 @@ def tag_ff_log(metadata):
     if side_data is None:
         return None
     data_type = side_data.get("side_data_type", None)
-    if contains_keywords(data_type, ["DOVI"]):
-        return "DOVI"
-    return None
+    return match_keyword_rules(data_type, FF_LOG_TAG_RULES)
 
 
 def tag_ff_encoder(metadata):
@@ -226,15 +239,13 @@ def tag_ff_encoder(metadata):
     encoder = tags.get("encoder", None)
     if encoder is None:
         return None
-    if contains_keywords(encoder, ["h.264", "h264", "avc"]):
-        formatted_encoder = "AVC"
-    elif contains_keywords(encoder, ["h.265", "h265", "hevc"]):
-        formatted_encoder = "HEVC"
-    else:
-        formatted_encoder = encoder.strip()
-        if len(formatted_encoder) > 0:
-            raise ValueError(f"encoder convert failure: {encoder}")
-    return formatted_encoder if len(formatted_encoder) > 0 else None
+    normalized_tag = match_keyword_rules(encoder, FF_ENCODER_TAG_RULES)
+    if normalized_tag is not None:
+        return normalized_tag
+    formatted_encoder = encoder.strip()
+    if len(formatted_encoder) > 0:
+        raise ValueError(f"encoder convert failure: {encoder}")
+    return None
 
 
 def formatted_tags(filename, options=None):
