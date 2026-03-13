@@ -1,14 +1,13 @@
-from concurrent.futures import ThreadPoolExecutor
 import logging
 import os
 import shutil
+from concurrent.futures import ThreadPoolExecutor
 
 from tqdm import tqdm
 
 from mediarchiver.common.reporting import OperationLogger
 from mediarchiver.common.tool import (
     FILE_EXT_LIST,
-    get_media_date,
     get_media_date_from_metadata,
     load_metadata_result,
 )
@@ -31,10 +30,6 @@ def prefetch_archive_metadata(file_paths, workers=None):
     with ThreadPoolExecutor(max_workers=get_prefetch_workers(len(file_paths), workers)) as executor:
         results = executor.map(get_archive_metadata_error, file_paths)
         return dict(zip(file_paths, results))
-
-
-def get_date(filename):
-    return get_media_date(filename)
 
 
 def get_archive_metadata_error(file_path):

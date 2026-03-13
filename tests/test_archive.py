@@ -1,14 +1,20 @@
 import json
+
 import pytest
 
 from mediarchiver.archive import archive_obj, build_parser, get_quarter, sort_files
-from mediarchiver.common.external import CommandLoadResult
 
 
 def test_archive_parser_supports_dry_run_flag():
     parser = build_parser()
     args = parser.parse_args(["input-dir", "--dry-run"])
     assert args.dry_run is True
+
+
+def test_archive_parser_supports_to_flag():
+    parser = build_parser()
+    args = parser.parse_args(["input-dir", "--to", "target-dir"])
+    assert args.to == "target-dir"
 
 
 def test_archive_parser_supports_workers_flag():

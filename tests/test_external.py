@@ -3,10 +3,10 @@ import subprocess
 import pytest
 
 from mediarchiver.common.external import (
+    _COMMAND_AVAILABILITY_CACHE,
     DependencyMissingError,
     ExternalToolExecutionError,
     ExternalToolTimeoutError,
-    _COMMAND_AVAILABILITY_CACHE,
     ensure_command_available,
     run_json_command,
 )
@@ -22,7 +22,9 @@ def test_run_json_command_raises_dependency_missing(monkeypatch):
 
 def test_run_json_command_raises_timeout_error(monkeypatch):
     _COMMAND_AVAILABILITY_CACHE.clear()
-    monkeypatch.setattr("mediarchiver.common.external.shutil.which", lambda _name: "/usr/bin/exiftool")
+    monkeypatch.setattr(
+        "mediarchiver.common.external.shutil.which", lambda _name: "/usr/bin/exiftool"
+    )
 
     def raise_timeout(*_args, **_kwargs):
         raise subprocess.TimeoutExpired(cmd=["exiftool"], timeout=15)
@@ -35,7 +37,9 @@ def test_run_json_command_raises_timeout_error(monkeypatch):
 
 def test_run_json_command_raises_execution_error_for_nonzero_exit(monkeypatch):
     _COMMAND_AVAILABILITY_CACHE.clear()
-    monkeypatch.setattr("mediarchiver.common.external.shutil.which", lambda _name: "/usr/bin/exiftool")
+    monkeypatch.setattr(
+        "mediarchiver.common.external.shutil.which", lambda _name: "/usr/bin/exiftool"
+    )
 
     def raise_called_process_error(*_args, **_kwargs):
         raise subprocess.CalledProcessError(

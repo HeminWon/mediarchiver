@@ -8,9 +8,6 @@ from decimal import Decimal
 from mediarchiver.common.tool import (
     FILE_EXT_LIST,
     IMAGE_EXT_LIST,
-    get_media_date,
-    is_IMG,
-    is_VID,
 )
 from mediarchiver.rename.metadata import (
     FileMetadataContext,
@@ -50,10 +47,6 @@ def live_photo_match_image(folder_path, filter_num):
         file_name for file_name in glob.glob(folder_path + "/*") if pattern.search(file_name)
     ]
     return image_files[0] if image_files else None
-
-
-def exist_filter_file(folder_path, filter_file):
-    return len(glob.glob(os.path.join(folder_path, filter_file))) > 0
 
 
 def file_number(file_name, try_hash=False):
@@ -304,12 +297,6 @@ def formated_tags_IMG(filename):
     return "-".join(tags) if len(tags) > 0 else None
 
 
-def get_date(filename):
-    if isinstance(filename, FileMetadataContext):
-        return filename.media_date
-    return get_media_date(filename)
-
-
 def formatted_date(date):
     matches = re.search(r"\d{4}:\d{2}:\d{2}\s\d{2}:\d{2}:\d{2}", date)
     return str(matches.group()).replace(":", "").replace(" ", "-") if matches else None
@@ -343,7 +330,7 @@ def generate_new_filename_prefix(folder_path, obj=None, options=None):
         if obj is None:
             raise ValueError("obj is required when folder_path is not a FileMetadataContext")
         context = build_file_metadata_context(os.path.join(folder_path, obj))
-    date = get_date(context)
+    date = context.media_date
     if date is None:
         logging.error(f"date is invalid: {obj}")
         return None

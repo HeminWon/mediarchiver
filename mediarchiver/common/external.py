@@ -1,7 +1,7 @@
-from dataclasses import dataclass
 import json
 import shutil
 import subprocess
+from dataclasses import dataclass
 from typing import Any, Optional
 
 DEFAULT_COMMAND_TIMEOUT = 15

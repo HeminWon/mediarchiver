@@ -92,7 +92,7 @@
 
 ### 重命名预览
 
-默认执行重命名脚本时，主要是扫描并记录，不会直接改名：
+默认执行重命名时，会先扫描目录并生成 `rename-plan.json`，不会直接改名：
 
 ```bash
 python3 -m mediarchiver rename <source>
@@ -100,10 +100,10 @@ python3 -m mediarchiver rename <source>
 
 ### 执行实际重命名
 
-传入 `--rename` 后才会真正修改文件名：
+传入 `--apply` 后才会真正修改文件名：
 
 ```bash
-python3 -m mediarchiver rename <source> --rename
+python3 -m mediarchiver rename <source> --apply
 ```
 
 ### 重命名 dry-run
@@ -111,7 +111,7 @@ python3 -m mediarchiver rename <source> --rename
 如需走完整规则但不真正改名，可传入：
 
 ```bash
-python3 -m mediarchiver rename <source> --rename --dry-run
+python3 -m mediarchiver rename <source> --apply --dry-run
 ```
 
 ### 控制并发读取数
@@ -120,7 +120,7 @@ python3 -m mediarchiver rename <source> --rename --dry-run
 
 ```bash
 python3 -m mediarchiver rename <source> --workers 2
-python3 -m mediarchiver archive <source> --destination <target> --workers 2
+python3 -m mediarchiver archive <source> --to <target> --workers 2
 ```
 
 说明：
@@ -136,17 +136,19 @@ python3 -m mediarchiver archive <source> --destination <target> --workers 2
 默认会跳过已经符合目标格式的文件名。如果希望这些文件也参与扫描，可传入：
 
 ```bash
-python3 -m mediarchiver rename <source> --include-formatted
+python3 -m mediarchiver rename <source> --all
 ```
 
-### 构建 plan 与导出 shell
+### 使用已有 plan 与导出 shell
 
-长期工作流建议先生成 `plan.json`，再决定执行或导出 shell：
+默认会在源目录生成 `rename-plan.json`。如果需要，也可以基于已有 plan 执行、预演或导出 shell：
 
 ```bash
-python3 -m mediarchiver rename <source> --build-plan rename-plan.json
-python3 -m mediarchiver rename --build-plan rename-plan.json --export-shell rename.sh
-python3 -m mediarchiver rename --apply-plan rename-plan.json
+python3 -m mediarchiver rename <source> --shell
+python3 -m mediarchiver rename --plan rename-plan.json
+python3 -m mediarchiver rename --plan rename-plan.json --apply
+python3 -m mediarchiver rename --plan rename-plan.json --dry-run
+python3 -m mediarchiver rename --plan rename-plan.json --shell
 ```
 
 ### 视频编码标签
@@ -161,17 +163,17 @@ python3 -m mediarchiver rename --apply-plan rename-plan.json
 将素材按年份和季度归档：
 
 ```bash
-python3 -m mediarchiver archive <source> --destination <target>
+python3 -m mediarchiver archive <source> --to <target>
 ```
 
-如果不传 `--destination`，则默认使用源目录作为目标目录。
+如果不传 `--to`，则默认使用源目录作为目标目录。
 
 ### 归档 dry-run
 
 归档支持预演模式，用于先检查目标路径和冲突：
 
 ```bash
-python3 -m mediarchiver archive <source> --destination <target> --dry-run
+python3 -m mediarchiver archive <source> --to <target> --dry-run
 ```
 
 ## 输出结果
@@ -181,6 +183,8 @@ python3 -m mediarchiver archive <source> --destination <target> --dry-run
 - `rename.log`：重命名过程日志
 - `archived.log`：归档过程日志
 - `rename_info.txt`：记录已处理文件的 MD5、目标文件名和原文件名
+- `rename-plan.json`：默认写入源目录的重命名计划文件
+- `rename.sh`：可选导出的 shell 脚本
 - `rename_operations.jsonl`：结构化重命名操作记录
 - `rename_conflicts.jsonl`：重命名冲突记录
 - `archive_operations.jsonl`：结构化归档操作记录

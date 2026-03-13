@@ -1,6 +1,6 @@
-from concurrent.futures import ThreadPoolExecutor
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
 
 from tqdm import tqdm
 
@@ -285,9 +285,9 @@ def apply_rename_plan(plan, dry_run=False):
 
             try:
                 logging.info("rename: %s => %s", item.source, item.destination)
-                file_txt.write(
-                    f"{md5} <= {os.path.basename(item.destination)} <= {os.path.basename(item.source)}\n"
-                )
+                destination_name = os.path.basename(item.destination)
+                source_name = os.path.basename(item.source)
+                file_txt.write(f"{md5} <= {destination_name} <= {source_name}\n")
                 os.rename(item.source, item.destination)
                 report_logger.record(
                     "rename",
@@ -308,11 +308,3 @@ def apply_rename_plan(plan, dry_run=False):
                 )
         process_items.close()
     return report_logger.summary.as_dict()
-
-
-def scan_dir(source, options=None, workers=None):
-    options = options or RenameOptions()
-    plan = build_rename_plan(source, options=options, workers=workers)
-    if options.should_apply_changes:
-        return apply_rename_plan(plan, dry_run=False)
-    return apply_rename_plan(plan, dry_run=True)

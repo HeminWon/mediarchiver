@@ -1,10 +1,9 @@
+import json
+import shlex
 from collections import Counter
 from dataclasses import asdict, dataclass, field
-import json
 from pathlib import Path
-import shlex
 from typing import Any, Dict, List, Optional
-
 
 RENAME_PLAN_VERSION = 1
 

@@ -22,16 +22,18 @@ Then use the unified CLI:
 
 ```bash
 mediarchiver rename <source>
-mediarchiver rename <source> --rename
-mediarchiver rename <source> --rename --dry-run
-mediarchiver rename <source> --include-formatted
+mediarchiver rename <source> --apply
+mediarchiver rename <source> --apply --dry-run
+mediarchiver rename <source> --all
 mediarchiver rename <source> --workers 2
-mediarchiver archive <source> --destination <target>
-mediarchiver archive <source> --destination <target> --dry-run
-mediarchiver archive <source> --destination <target> --workers 2
-mediarchiver rename <source> --build-plan rename-plan.json
-mediarchiver rename --build-plan rename-plan.json --export-shell rename.sh
-mediarchiver rename --apply-plan rename-plan.json
+mediarchiver rename <source> --shell
+mediarchiver rename --plan rename-plan.json
+mediarchiver rename --plan rename-plan.json --apply
+mediarchiver rename --plan rename-plan.json --dry-run
+mediarchiver rename --plan rename-plan.json --shell
+mediarchiver archive <source> --to <target>
+mediarchiver archive <source> --to <target> --dry-run
+mediarchiver archive <source> --to <target> --workers 2
 python -m mediarchiver rename <source>
 ```
 
@@ -55,8 +57,8 @@ ruff check .
 - `rename.log`: rename workflow log
 - `archived.log`: archive workflow log
 - `rename_info.txt`: applied rename history
-- `rename-plan.json`: optional rename plan output
-- `rename.sh`: optional shell export generated from a plan
+- `rename-plan.json`: default rename plan output written into the source directory
+- `rename.sh`: optional shell export generated next to the source directory or plan file
 - `rename_operations.jsonl`: structured rename operation report
 - `rename_conflicts.jsonl`: rename conflict report
 - `archive_operations.jsonl`: structured archive operation report

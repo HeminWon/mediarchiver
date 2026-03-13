@@ -1,28 +1,27 @@
 import json
+
 import pytest
 
 from mediarchiver.cli import build_parser as build_root_parser
+from mediarchiver.common.external import CommandLoadResult
+from mediarchiver.common.tool import load_metadata_result
 from mediarchiver.rename import (
     RenameOptions,
     apply_rename_plan,
     build_parser,
     build_rename_plan,
     export_rename_plan_shell,
-    generate_new_filename,
     load_rename_plan,
-    need_ignore_file,
     render_rename_plan_shell,
-    scan_dir,
-    tag_ff_encoder,
     write_rename_plan,
 )
-from mediarchiver.common.external import CommandLoadResult
+from mediarchiver.rename.cli import validate_args
 from mediarchiver.rename.metadata import (
     FileMetadataContext,
     build_file_metadata_context,
     load_ffprobe_metadata_result,
 )
-from mediarchiver.common.tool import load_metadata_result
+from mediarchiver.rename.rules import generate_new_filename, need_ignore_file, tag_ff_encoder
 
 
 def test_parser_can_be_imported_without_side_effects():
@@ -31,31 +30,35 @@ def test_parser_can_be_imported_without_side_effects():
     assert args.source == "input-dir"
     assert args.include_formatted is False
     assert args.dry_run is False
-    assert args.build_plan is None
-    assert args.apply_plan is None
+    assert args.plan is None
+    assert args.apply is False
+    assert args.shell is False
 
 
 def test_root_parser_supports_rename_and_archive_commands():
     parser = build_root_parser()
 
-    rename_args = parser.parse_args(["rename", "input-dir", "--dry-run"])
+    rename_args = parser.parse_args(["rename", "input-dir", "--apply", "--dry-run"])
     archive_args = parser.parse_args(["archive", "input-dir", "--dry-run"])
 
     assert rename_args.command == "rename"
-    assert rename_args.args == ["input-dir", "--dry-run"]
+    assert rename_args.source == "input-dir"
+    assert rename_args.apply is True
+    assert rename_args.dry_run is True
     assert archive_args.command == "archive"
-    assert archive_args.args == ["input-dir", "--dry-run"]
+    assert archive_args.source == "input-dir"
+    assert archive_args.dry_run is True
 
 
-def test_parser_supports_include_formatted_flag():
+def test_parser_supports_all_flag():
     parser = build_parser()
-    args = parser.parse_args(["input-dir", "--include-formatted"])
+    args = parser.parse_args(["input-dir", "--all"])
     assert args.include_formatted is True
 
 
 def test_parser_supports_dry_run_flag():
     parser = build_parser()
-    args = parser.parse_args(["input-dir", "--dry-run"])
+    args = parser.parse_args(["input-dir", "--apply", "--dry-run"])
     assert args.dry_run is True
 
 
@@ -71,22 +74,36 @@ def test_parser_rejects_non_positive_workers():
         parser.parse_args(["input-dir", "--workers", "0"])
 
 
-def test_parser_supports_build_plan_flag():
+def test_parser_supports_plan_flag():
     parser = build_parser()
-    args = parser.parse_args(["input-dir", "--build-plan", "rename-plan.json"])
-    assert args.build_plan == "rename-plan.json"
+    args = parser.parse_args(["--plan", "rename-plan.json"])
+    assert args.plan == "rename-plan.json"
 
 
-def test_parser_supports_apply_plan_flag():
+def test_parser_supports_apply_flag():
     parser = build_parser()
-    args = parser.parse_args(["--apply-plan", "rename-plan.json"])
-    assert args.apply_plan == "rename-plan.json"
+    args = parser.parse_args(["input-dir", "--apply"])
+    assert args.apply is True
 
 
-def test_parser_supports_export_shell_flag():
+def test_parser_supports_shell_flag():
     parser = build_parser()
-    args = parser.parse_args(["--build-plan", "rename-plan.json", "--export-shell", "rename.sh"])
-    assert args.export_shell == "rename.sh"
+    args = parser.parse_args(["input-dir", "--shell"])
+    assert args.shell is True
+
+
+def test_parser_rejects_source_with_plan_flag():
+    parser = build_parser()
+    args = parser.parse_args(["input-dir", "--plan", "rename-plan.json"])
+    with pytest.raises(SystemExit):
+        validate_args(parser, args)
+
+
+def test_parser_rejects_dry_run_without_apply_or_plan():
+    parser = build_parser()
+    args = parser.parse_args(["input-dir", "--dry-run"])
+    with pytest.raises(SystemExit):
+        validate_args(parser, args)
 
 
 def test_need_ignore_file_skips_formatted_name_by_default(tmp_path):
@@ -132,7 +149,7 @@ def test_tag_ff_encoder_raises_for_unknown_encoder():
         raise AssertionError("Expected ValueError for unknown encoder")
 
 
-def test_scan_dir_dry_run_writes_operation_log_without_renaming(tmp_path, monkeypatch):
+def test_apply_built_plan_dry_run_writes_operation_log_without_renaming(tmp_path, monkeypatch):
     source_file = tmp_path / "IMG_0001.HEIC"
     source_file.write_text("demo", encoding="utf-8")
 
@@ -142,7 +159,8 @@ def test_scan_dir_dry_run_writes_operation_log_without_renaming(tmp_path, monkey
     )
     monkeypatch.setattr("mediarchiver.rename.service.get_md5", lambda *_args, **_kwargs: "abc123")
 
-    scan_dir(str(tmp_path), RenameOptions(rename=True, dry_run=True))
+    plan = build_rename_plan(str(tmp_path), RenameOptions())
+    apply_rename_plan(plan, dry_run=True)
 
     assert source_file.exists()
     operations = (
@@ -342,7 +360,7 @@ def test_load_rename_plan_rejects_relative_paths(tmp_path):
         load_rename_plan(plan_path)
 
 
-def test_scan_dir_rename_records_success(tmp_path, monkeypatch):
+def test_apply_built_plan_records_success(tmp_path, monkeypatch):
     source_file = tmp_path / "IMG_0001.HEIC"
     source_file.write_text("demo", encoding="utf-8")
 
@@ -352,7 +370,8 @@ def test_scan_dir_rename_records_success(tmp_path, monkeypatch):
     )
     monkeypatch.setattr("mediarchiver.rename.service.get_md5", lambda *_args, **_kwargs: "abc123")
 
-    summary = scan_dir(str(tmp_path), RenameOptions(rename=True))
+    plan = build_rename_plan(str(tmp_path), RenameOptions())
+    summary = apply_rename_plan(plan, dry_run=False)
 
     renamed_file = tmp_path / "20240102-030405_MiPh_1234.HEIC"
     assert renamed_file.exists()
@@ -481,7 +500,7 @@ def test_load_ffprobe_metadata_result_returns_structured_error(monkeypatch):
     assert result.error_message == "ffprobe failed"
 
 
-def test_scan_dir_records_metadata_load_failure_reason(tmp_path, monkeypatch):
+def test_apply_built_plan_records_metadata_load_failure_reason(tmp_path, monkeypatch):
     source_file = tmp_path / "IMG_0001.HEIC"
     source_file.write_text("demo", encoding="utf-8")
 
@@ -503,7 +522,8 @@ def test_scan_dir_records_metadata_load_failure_reason(tmp_path, monkeypatch):
 
     monkeypatch.setattr("mediarchiver.rename.service.build_file_metadata_context", fake_context)
 
-    scan_dir(str(tmp_path), RenameOptions(rename=True))
+    plan = build_rename_plan(str(tmp_path), RenameOptions())
+    apply_rename_plan(plan, dry_run=False)
 
     operations = (
         (tmp_path / "rename_operations.jsonl").read_text(encoding="utf-8").strip().splitlines()
@@ -514,7 +534,7 @@ def test_scan_dir_records_metadata_load_failure_reason(tmp_path, monkeypatch):
     assert record["details"]["message"] == "Command failed"
 
 
-def test_scan_dir_prefetches_contexts_once_per_candidate(tmp_path, monkeypatch):
+def test_build_rename_plan_prefetches_contexts_once_per_candidate(tmp_path, monkeypatch):
     source_file = tmp_path / "IMG_0001.HEIC"
     source_file.write_text("demo", encoding="utf-8")
     calls = []
@@ -543,7 +563,7 @@ def test_scan_dir_prefetches_contexts_once_per_candidate(tmp_path, monkeypatch):
     )
     monkeypatch.setattr("mediarchiver.rename.service.get_md5", lambda *_args, **_kwargs: "abc123")
 
-    scan_dir(str(tmp_path), RenameOptions(rename=True, dry_run=True))
+    build_rename_plan(str(tmp_path), RenameOptions())
 
     assert calls == [str(source_file)]
 

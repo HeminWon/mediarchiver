@@ -1,7 +1,7 @@
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-import logging
 from typing import Any, Dict, Optional
 
 from mediarchiver.common.external import (
@@ -14,21 +14,12 @@ from mediarchiver.common.external import (
 from mediarchiver.common.tool import (
     get_media_date_from_metadata,
     is_IMG,
-    is_VID,
     is_live_photo_video_from_metadata,
+    is_VID,
     load_metadata_result,
 )
 
-
 MAX_METADATA_READ_WORKERS = 2
-
-
-def get_metadata(file_path):
-    return load_metadata_result(file_path).data
-
-
-def get_metadata_ff(file_path):
-    return load_ffprobe_metadata_result(file_path).data
 
 
 def load_ffprobe_metadata_result(file_path):
