@@ -13,6 +13,7 @@ from src.common.external import (
 
 
 def test_run_json_command_raises_dependency_missing(monkeypatch):
+    _COMMAND_AVAILABILITY_CACHE.clear()
     monkeypatch.setattr("src.common.external.shutil.which", lambda _name: None)
 
     with pytest.raises(DependencyMissingError):
@@ -20,6 +21,7 @@ def test_run_json_command_raises_dependency_missing(monkeypatch):
 
 
 def test_run_json_command_raises_timeout_error(monkeypatch):
+    _COMMAND_AVAILABILITY_CACHE.clear()
     monkeypatch.setattr("src.common.external.shutil.which", lambda _name: "/usr/bin/exiftool")
 
     def raise_timeout(*_args, **_kwargs):
@@ -32,6 +34,7 @@ def test_run_json_command_raises_timeout_error(monkeypatch):
 
 
 def test_run_json_command_raises_execution_error_for_nonzero_exit(monkeypatch):
+    _COMMAND_AVAILABILITY_CACHE.clear()
     monkeypatch.setattr("src.common.external.shutil.which", lambda _name: "/usr/bin/exiftool")
 
     def raise_called_process_error(*_args, **_kwargs):

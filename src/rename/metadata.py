@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 import logging
@@ -17,6 +18,9 @@ from src.common.tool import (
     is_live_photo_video_from_metadata,
     load_metadata_result,
 )
+
+
+MAX_METADATA_READ_WORKERS = 2
 
 
 def get_metadata(file_path):
@@ -83,17 +87,27 @@ class FileMetadataContext:
         return Path(self.file_path).suffix
 
 
-def build_file_metadata_context(file_path):
+def build_file_metadata_context(file_path, parallel_reads=True):
     is_image = is_IMG(file_path)
     is_video = is_VID(file_path)
-    exif_result = load_metadata_result(file_path)
-    exif_metadata = exif_result.data
     ffprobe_result = None
     ffprobe_metadata = None
 
-    if is_video:
+    if is_video and parallel_reads:
+        with ThreadPoolExecutor(max_workers=MAX_METADATA_READ_WORKERS) as executor:
+            exif_future = executor.submit(load_metadata_result, file_path)
+            ffprobe_future = executor.submit(load_ffprobe_metadata_result, file_path)
+            exif_result = exif_future.result()
+            ffprobe_result = ffprobe_future.result()
+        ffprobe_metadata = ffprobe_result.data
+    elif is_video:
+        exif_result = load_metadata_result(file_path)
         ffprobe_result = load_ffprobe_metadata_result(file_path)
         ffprobe_metadata = ffprobe_result.data
+    else:
+        exif_result = load_metadata_result(file_path)
+
+    exif_metadata = exif_result.data
 
     return FileMetadataContext(
         file_path=file_path,

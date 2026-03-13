@@ -1,9 +1,11 @@
+from concurrent.futures import ThreadPoolExecutor
 import logging
 import os
 
 from tqdm import tqdm
 
 from src.common.reporting import OperationLogger
+from src.common.workers import resolve_worker_count
 from src.rename.metadata import build_file_metadata_context, get_context_load_error
 from src.rename.options import RenameOptions
 from src.rename.rules import (
@@ -12,6 +14,28 @@ from src.rename.rules import (
     is_formatted_file_name,
     need_ignore_file,
 )
+
+MAX_CONTEXT_PREFETCH_WORKERS = 4
+
+
+def get_prefetch_workers(item_count, requested_workers=None):
+    return resolve_worker_count(
+        item_count,
+        requested_workers=requested_workers,
+        default_max_workers=MAX_CONTEXT_PREFETCH_WORKERS,
+    )
+
+
+def prefetch_file_contexts(file_paths, workers=None):
+    if not file_paths:
+        return {}
+
+    def load_prefetched_context(file_path):
+        return build_file_metadata_context(file_path, parallel_reads=False)
+
+    with ThreadPoolExecutor(max_workers=get_prefetch_workers(len(file_paths), workers)) as executor:
+        contexts = executor.map(load_prefetched_context, file_paths)
+        return dict(zip(file_paths, contexts))
 
 
 def list_md5(file_path):
@@ -26,12 +50,20 @@ def list_md5(file_path):
     return md5s
 
 
-def scan_dir(source, options=None):
+def scan_dir(source, options=None, workers=None):
     options = options or RenameOptions()
     info_file = os.path.join(source, "rename_info.txt")
     report_logger = OperationLogger(source, "rename")
     md5s = list_md5(info_file)
-    context_cache = {}
+    objects = os.listdir(source)
+    context_cache = prefetch_file_contexts(
+        [
+            os.path.join(source, obj)
+            for obj in objects
+            if not need_ignore_file(source, obj, options)
+        ],
+        workers=workers,
+    )
 
     open(info_file, "a", encoding="utf-8").close()
 
@@ -43,7 +75,7 @@ def scan_dir(source, options=None):
         return context
 
     with open(info_file, "a", encoding="utf-8") as file_txt:
-        process_objs = tqdm(os.listdir(source))
+        process_objs = tqdm(objects)
         for obj in process_objs:
             process_objs.set_description("Processing " + obj)
             file_path = os.path.join(source, obj)

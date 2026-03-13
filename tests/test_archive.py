@@ -1,12 +1,26 @@
 import json
+import pytest
 
 from src.archive import archive_obj, build_parser, get_quarter, sort_files
+from src.common.external import CommandLoadResult
 
 
 def test_archive_parser_supports_dry_run_flag():
     parser = build_parser()
     args = parser.parse_args(["input-dir", "--dry-run"])
     assert args.dry_run is True
+
+
+def test_archive_parser_supports_workers_flag():
+    parser = build_parser()
+    args = parser.parse_args(["input-dir", "--workers", "2"])
+    assert args.workers == 2
+
+
+def test_archive_parser_rejects_non_positive_workers():
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["input-dir", "--workers", "0"])
 
 
 def test_get_quarter_maps_months_correctly():
@@ -109,3 +123,67 @@ def test_archive_obj_records_metadata_load_failure(tmp_path, monkeypatch):
     assert record["status"] == "skipped"
     assert record["reason"] == "exiftool_command_failed"
     assert record["details"]["message"] == "Command failed"
+
+
+def test_sort_files_prefetches_metadata_once_per_candidate(tmp_path, monkeypatch):
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    media_file = source_dir / "IMG_0001.JPG"
+    media_file.write_text("demo", encoding="utf-8")
+
+    calls = []
+
+    def fake_get_archive_metadata_error(file_path):
+        calls.append(file_path)
+        return None, "2024:05:02 03:04:05"
+
+    monkeypatch.setattr(
+        "src.archive.service.get_archive_metadata_error", fake_get_archive_metadata_error
+    )
+
+    sort_files(str(source_dir), str(target_dir), dry_run=True)
+
+    assert calls == [str(media_file)]
+
+
+def test_prefetch_archive_metadata_respects_requested_workers(monkeypatch):
+    observed = {}
+
+    class DummyExecutor:
+        def __init__(self, max_workers):
+            observed["max_workers"] = max_workers
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def map(self, func, items):
+            return [func(item) for item in items]
+
+    monkeypatch.setattr("src.archive.service.ThreadPoolExecutor", DummyExecutor)
+    monkeypatch.setattr(
+        "src.archive.service.get_archive_metadata_error",
+        lambda file_path: (None, f"date:{file_path}"),
+    )
+    monkeypatch.setattr("src.archive.service.os.cpu_count", lambda: 8)
+
+    from src.archive.service import prefetch_archive_metadata
+
+    result = prefetch_archive_metadata(["a.jpg", "b.jpg"], workers=2)
+
+    assert observed["max_workers"] == 2
+    assert result == {"a.jpg": (None, "date:a.jpg"), "b.jpg": (None, "date:b.jpg")}
+
+
+def test_archive_prefetch_workers_are_clamped(monkeypatch):
+    monkeypatch.setattr("src.common.workers.os.cpu_count", lambda: 2)
+
+    from src.archive.service import get_prefetch_workers
+
+    assert get_prefetch_workers(1, requested_workers=8) == 1
+    assert get_prefetch_workers(5, requested_workers=8) == 2
+    assert get_prefetch_workers(5) == 2

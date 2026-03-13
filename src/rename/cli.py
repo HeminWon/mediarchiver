@@ -3,6 +3,7 @@ import argparse
 from src.common.console import print_run_header, print_run_summary
 from src.common.external import preflight_check_commands
 from src.common.logging_utils import configure_logging
+from src.common.workers import positive_int
 from src.rename.options import RenameOptions
 from src.rename.service import scan_dir
 
@@ -39,6 +40,12 @@ def build_parser():
         default=False,
         help="preview rename operations without changing files",
     )
+    parser.add_argument(
+        "--workers",
+        type=positive_int,
+        default=None,
+        help="metadata prefetch worker count (default: auto)",
+    )
     return parser
 
 
@@ -62,7 +69,8 @@ def main(argv=None):
             "rename": options.rename,
             "include_formatted": options.include_formatted,
             "dry_run": options.dry_run,
+            "workers": args.workers,
         },
     )
-    summary = scan_dir(args.source, options)
+    summary = scan_dir(args.source, options, workers=args.workers)
     print_run_summary("rename", summary)

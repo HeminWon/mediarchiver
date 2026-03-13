@@ -4,6 +4,7 @@ from src.archive.service import sort_files
 from src.common.console import print_run_header, print_run_summary
 from src.common.external import preflight_check_commands
 from src.common.logging_utils import configure_logging
+from src.common.workers import positive_int
 
 
 def build_parser():
@@ -21,6 +22,12 @@ def build_parser():
         default=False,
         help="preview archive operations without moving files",
     )
+    parser.add_argument(
+        "--workers",
+        type=positive_int,
+        default=None,
+        help="metadata prefetch worker count (default: auto)",
+    )
     return parser
 
 
@@ -36,7 +43,8 @@ def main(argv=None):
             "source": args.source,
             "destination": destination,
             "dry_run": args.dry_run,
+            "workers": args.workers,
         },
     )
-    summary = sort_files(args.source, destination, dry_run=args.dry_run)
+    summary = sort_files(args.source, destination, dry_run=args.dry_run, workers=args.workers)
     print_run_summary("archive", summary)

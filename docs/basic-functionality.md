@@ -114,6 +114,23 @@ python3 -m src.rename.rename <source> --rename
 python3 -m src.rename.rename <source> --rename --dry-run
 ```
 
+### 控制并发读取数
+
+重命名和归档现在支持通过 `--workers` 控制元数据预读取并发度。
+
+```bash
+python3 -m src.rename.rename <source> --workers 2
+python3 -m src.archive.archive <source> --destination <target> --workers 2
+```
+
+说明：
+
+- `--workers` 只影响 `exiftool` 和 `ffprobe` 的并发读取
+- 实际 `rename`、`move`、日志写入仍是串行执行，用来避免冲突和顺序问题
+- 默认不传时会自动选择并发度，依据 CPU 数量和待处理文件数决定
+- 建议值：笔记本或机械盘先用 `2`，本地 SSD 批量处理可尝试 `3` 到 `4`
+- 首次处理陌生目录时，建议优先搭配 `--dry-run --workers 2` 观察结果
+
 ### 包含已格式化文件
 
 默认会跳过已经符合目标格式的文件名。如果希望这些文件也参与扫描，可传入：

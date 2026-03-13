@@ -1,4 +1,5 @@
 import json
+import pytest
 
 from src.rename import (
     RenameOptions,
@@ -9,7 +10,11 @@ from src.rename import (
     tag_ff_encoder,
 )
 from src.common.external import CommandLoadResult
-from src.rename.metadata import build_file_metadata_context, load_ffprobe_metadata_result
+from src.rename.metadata import (
+    FileMetadataContext,
+    build_file_metadata_context,
+    load_ffprobe_metadata_result,
+)
 from src.common.tool import load_metadata_result
 
 
@@ -31,6 +36,18 @@ def test_parser_supports_dry_run_flag():
     parser = build_parser()
     args = parser.parse_args(["input-dir", "--dry-run"])
     assert args.dry_run is True
+
+
+def test_parser_supports_workers_flag():
+    parser = build_parser()
+    args = parser.parse_args(["input-dir", "--workers", "3"])
+    assert args.workers == 3
+
+
+def test_parser_rejects_non_positive_workers():
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["input-dir", "--workers", "0"])
 
 
 def test_need_ignore_file_skips_formatted_name_by_default(tmp_path):
@@ -170,6 +187,40 @@ def test_generate_new_filename_reuses_preloaded_metadata(tmp_path, monkeypatch):
     assert calls == {"exif": 1, "ffprobe": 1}
 
 
+def test_build_file_metadata_context_loads_video_metadata_once(tmp_path, monkeypatch):
+    video_file = tmp_path / "clip.mov"
+    video_file.write_text("demo", encoding="utf-8")
+    calls = {"exif": 0, "ffprobe": 0}
+
+    def fake_load_metadata_result(_file_path):
+        calls["exif"] += 1
+        return CommandLoadResult(
+            tool_name="exiftool",
+            data={"DateTimeOriginal": "2024:01:02 03:04:05", "Make": "Apple"},
+        )
+
+    def fake_load_ffprobe_metadata_result(_file_path):
+        calls["ffprobe"] += 1
+        return CommandLoadResult(
+            tool_name="ffprobe",
+            data={"streams": [{"codec_type": "video", "width": 1920, "height": 1080}]},
+        )
+
+    monkeypatch.setattr("src.rename.metadata.load_metadata_result", fake_load_metadata_result)
+    monkeypatch.setattr(
+        "src.rename.metadata.load_ffprobe_metadata_result",
+        fake_load_ffprobe_metadata_result,
+    )
+
+    context = build_file_metadata_context(str(video_file))
+
+    assert context.exif_metadata is not None
+    assert context.ffprobe_metadata is not None
+    assert context.exif_metadata["Make"] == "Apple"
+    assert context.ffprobe_metadata["streams"][0]["width"] == 1920
+    assert calls == {"exif": 1, "ffprobe": 1}
+
+
 def test_load_metadata_result_returns_structured_error(monkeypatch):
     def raise_failure(*_args, **_kwargs):
         raise TypeError("boom")
@@ -206,7 +257,7 @@ def test_scan_dir_records_metadata_load_failure_reason(tmp_path, monkeypatch):
     from src.common.external import build_command_load_error
     from src.rename.metadata import FileMetadataContext
 
-    def fake_context(_file_path):
+    def fake_context(_file_path, parallel_reads=True):
         return FileMetadataContext(
             file_path=str(source_file),
             exif_result=build_command_load_error("exiftool", "command_failed", "Command failed"),
@@ -230,3 +281,91 @@ def test_scan_dir_records_metadata_load_failure_reason(tmp_path, monkeypatch):
     assert record["status"] == "skipped"
     assert record["reason"] == "exiftool_command_failed"
     assert record["details"]["message"] == "Command failed"
+
+
+def test_scan_dir_prefetches_contexts_once_per_candidate(tmp_path, monkeypatch):
+    source_file = tmp_path / "IMG_0001.HEIC"
+    source_file.write_text("demo", encoding="utf-8")
+    calls = []
+
+    def fake_context(file_path, parallel_reads=True):
+        calls.append(file_path)
+        return FileMetadataContext(
+            file_path=file_path,
+            exif_result=CommandLoadResult(
+                tool_name="exiftool",
+                data={"DateTimeOriginal": "2024:01:02 03:04:05", "Make": "Apple"},
+            ),
+            ffprobe_result=None,
+            exif_metadata={"DateTimeOriginal": "2024:01:02 03:04:05", "Make": "Apple"},
+            ffprobe_metadata=None,
+            media_date="2024:01:02 03:04:05",
+            is_image=True,
+            is_video=False,
+            is_live_photo_video=False,
+        )
+
+    monkeypatch.setattr("src.rename.service.build_file_metadata_context", fake_context)
+    monkeypatch.setattr(
+        "src.rename.service.generate_new_filename",
+        lambda *_args, **_kwargs: "20240102-030405_MiPh_1234.HEIC",
+    )
+    monkeypatch.setattr("src.rename.service.get_md5", lambda *_args, **_kwargs: "abc123")
+
+    scan_dir(str(tmp_path), RenameOptions(rename=True, dry_run=True))
+
+    assert calls == [str(source_file)]
+
+
+def test_prefetch_file_contexts_respects_requested_workers(monkeypatch):
+    observed = {}
+    calls = []
+
+    class DummyExecutor:
+        def __init__(self, max_workers):
+            observed["max_workers"] = max_workers
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def map(self, func, items):
+            return [func(item) for item in items]
+
+    def fake_context(file_path, parallel_reads=True):
+        calls.append((file_path, parallel_reads))
+        return FileMetadataContext(
+            file_path=file_path,
+            exif_result=CommandLoadResult(tool_name="exiftool", data={}),
+            ffprobe_result=None,
+            exif_metadata={},
+            ffprobe_metadata=None,
+            media_date=None,
+            is_image=True,
+            is_video=False,
+            is_live_photo_video=False,
+        )
+
+    monkeypatch.setattr("src.rename.service.ThreadPoolExecutor", DummyExecutor)
+    monkeypatch.setattr("src.rename.service.build_file_metadata_context", fake_context)
+    monkeypatch.setattr("src.rename.service.os.cpu_count", lambda: 8)
+
+    from src.rename.service import prefetch_file_contexts
+
+    result = prefetch_file_contexts(["a.jpg", "b.jpg", "c.jpg"], workers=2)
+
+    assert observed["max_workers"] == 2
+    assert list(result) == ["a.jpg", "b.jpg", "c.jpg"]
+    assert calls == [("a.jpg", False), ("b.jpg", False), ("c.jpg", False)]
+
+
+def test_rename_prefetch_workers_are_clamped(monkeypatch):
+    monkeypatch.setattr("src.common.workers.os.cpu_count", lambda: 2)
+
+    from src.rename.service import get_prefetch_workers
+
+    assert get_prefetch_workers(1, requested_workers=8) == 1
+    assert get_prefetch_workers(5, requested_workers=8) == 2
+    assert get_prefetch_workers(5) == 2
