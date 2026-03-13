@@ -4,6 +4,7 @@ import logging
 import os
 import re
 from decimal import Decimal
+from functools import lru_cache
 
 from mediarchiver.common.tool import (
     FILE_EXT_LIST,
@@ -17,7 +18,9 @@ from mediarchiver.rename.metadata import (
 from mediarchiver.rename.options import RenameOptions
 
 
-def get_md5(filename):
+@lru_cache(maxsize=1024)
+def _get_md5_cached(cache_key):
+    filename, _, _, _ = cache_key
     md5 = hashlib.md5()
     with open(filename, "rb") as file_obj:
         while True:
@@ -26,6 +29,25 @@ def get_md5(filename):
                 break
             md5.update(data)
     return md5.hexdigest()
+
+
+def _get_md5_cache_key(filename):
+    absolute_path = os.path.abspath(filename)
+    stat_result = os.stat(absolute_path)
+    return (
+        absolute_path,
+        stat_result.st_ino,
+        stat_result.st_size,
+        stat_result.st_mtime_ns,
+    )
+
+
+def get_md5(filename):
+    return _get_md5_cached(_get_md5_cache_key(filename))
+
+
+def clear_md5_cache():
+    _get_md5_cached.cache_clear()
 
 
 def is_formatted_file_name(filename):
@@ -41,12 +63,20 @@ def contains_keywords(text, keywords):
 
 
 def live_photo_match_image(folder_path, filter_num):
-    pattern_str = rf"{filter_num}\.({'|'.join(IMAGE_EXT_LIST)})$".replace(" ", "")
+    return _live_photo_image_lookup(folder_path).get(filter_num)
+
+
+@lru_cache(maxsize=None)
+def _live_photo_image_lookup(folder_path):
+    pattern_str = rf"(\d{{4}})\.({'|'.join(IMAGE_EXT_LIST)})$".replace(" ", "")
     pattern = re.compile(pattern_str, re.IGNORECASE)
-    image_files = [
-        file_name for file_name in glob.glob(folder_path + "/*") if pattern.search(file_name)
-    ]
-    return image_files[0] if image_files else None
+    lookup = {}
+    for file_name in sorted(glob.glob(os.path.join(folder_path, "*"))):
+        match = pattern.search(file_name)
+        if match is None:
+            continue
+        lookup.setdefault(match.group(1), file_name)
+    return lookup
 
 
 def file_number(file_name, try_hash=False):
@@ -68,48 +98,34 @@ def file_number(file_name, try_hash=False):
     return last_four_digits_str if len(last_four_digits_str) == 4 else None
 
 
+MAKE_MODEL_TAG_RULES = [
+    (["Apple", "iPhone"], "iPh"),
+    (["iPad"], "iPad"),
+    (["xiaomi", "mi"], "MI"),
+    (["SONY"], "SON"),
+    (["CANON"], "CAN"),
+    (["NIKON"], "NIK"),
+    (["casio"], "CAS"),
+    (["GoPro", "HERO10", "HERO9"], "GoP"),
+    (["ZTE"], "ZTE"),
+    (["FUJIFILM"], "FUJ"),
+    (["Nokia"], "Nokia"),
+    (["HUAWEI"], "HUAWEI"),
+    (["Smartisan"], "Smartisan"),
+    (["Yiruikecorp"], "Yiruikecorp"),
+    (["OnePlus"], "OnePlus"),
+    (["vivo"], "vivo"),
+    (["DJI"], "DJI"),
+    (["Hasselblad"], "Hasselblad"),
+    (["nubia"], "Nubia"),
+]
+
+
 def deal_with_m(make_or_model):
-    if contains_keywords(make_or_model, ["Apple", "iPhone"]):
-        make_or_model = "iPh"
-    elif contains_keywords(make_or_model, ["iPad"]):
-        make_or_model = "iPad"
-    elif contains_keywords(make_or_model, ["xiaomi", "mi"]):
-        make_or_model = "MI"
-    elif contains_keywords(make_or_model, ["SONY"]):
-        make_or_model = "SON"
-    elif contains_keywords(make_or_model, ["CANON"]):
-        make_or_model = "CAN"
-    elif contains_keywords(make_or_model, ["NIKON"]):
-        make_or_model = "NIK"
-    elif contains_keywords(make_or_model, ["casio"]):
-        make_or_model = "CAS"
-    elif contains_keywords(make_or_model, ["GoPro", "HERO10", "HERO9"]):
-        make_or_model = "GoP"
-    elif contains_keywords(make_or_model, ["ZTE"]):
-        make_or_model = "ZTE"
-    elif contains_keywords(make_or_model, ["FUJIFILM"]):
-        make_or_model = "FUJ"
-    elif contains_keywords(make_or_model, ["Nokia"]):
-        make_or_model = "Nokia"
-    elif contains_keywords(make_or_model, ["HUAWEI"]):
-        make_or_model = "HUAWEI"
-    elif contains_keywords(make_or_model, ["Smartisan"]):
-        make_or_model = "Smartisan"
-    elif contains_keywords(make_or_model, ["Yiruikecorp"]):
-        make_or_model = "Yiruikecorp"
-    elif contains_keywords(make_or_model, ["OnePlus"]):
-        make_or_model = "OnePlus"
-    elif contains_keywords(make_or_model, ["vivo"]):
-        make_or_model = "vivo"
-    elif contains_keywords(make_or_model, ["DJI"]):
-        make_or_model = "DJI"
-    elif contains_keywords(make_or_model, ["Hasselblad"]):
-        make_or_model = "Hasselblad"
-    elif contains_keywords(make_or_model, ["nubia"]):
-        make_or_model = "Nubia"
-    else:
-        raise ValueError(f"convert failure: {make_or_model}")
-    return "M" + make_or_model
+    for keywords, normalized_tag in MAKE_MODEL_TAG_RULES:
+        if contains_keywords(make_or_model, keywords):
+            return "M" + normalized_tag
+    raise ValueError(f"convert failure: {make_or_model}")
 
 
 def tag_m(metadata):

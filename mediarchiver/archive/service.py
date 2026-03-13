@@ -129,16 +129,30 @@ def archive_obj(
             )
         return
 
-    os.makedirs(subfolder_path, exist_ok=True)
-    shutil.move(file_path, subfolder_path)
-    logging.info(f"Moved {obj} from {file_path} to {target_file_path}")
-    if report_logger is not None:
-        report_logger.record("archive", file_path, destination=target_file_path, status="success")
+    try:
+        os.makedirs(subfolder_path, exist_ok=True)
+        shutil.move(file_path, subfolder_path)
+        logging.info(f"Moved {obj} from {file_path} to {target_file_path}")
+        if report_logger is not None:
+            report_logger.record(
+                "archive", file_path, destination=target_file_path, status="success"
+            )
+    except OSError as exc:
+        logging.exception("archive move failed: %s", file_path)
+        if report_logger is not None:
+            report_logger.record(
+                "archive",
+                file_path,
+                destination=target_file_path,
+                status="skipped",
+                reason="move_failed",
+                details={"message": str(exc)},
+            )
 
 
 def sort_files(folder_path, target_path, dry_run=False, workers=None):
     report_logger = OperationLogger(folder_path, "archive")
-    objects = os.listdir(folder_path)
+    objects = sorted(os.listdir(folder_path))
     metadata_cache = prefetch_archive_metadata(
         [
             os.path.join(folder_path, obj)

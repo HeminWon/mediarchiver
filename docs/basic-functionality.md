@@ -182,7 +182,6 @@ python3 -m mediarchiver archive <source> --to <target> --dry-run
 
 - `rename.log`：重命名过程日志
 - `archived.log`：归档过程日志
-- `rename_info.txt`：记录已处理文件的 MD5、目标文件名和原文件名
 - `rename-plan.json`：默认写入源目录的重命名计划文件
 - `rename.sh`：可选导出的 shell 脚本
 - `rename_operations.jsonl`：结构化重命名操作记录
@@ -190,7 +189,7 @@ python3 -m mediarchiver archive <source> --to <target> --dry-run
 - `archive_operations.jsonl`：结构化归档操作记录
 - `archive_conflicts.jsonl`：归档冲突记录
 
-这些信息可用于排查问题或避免重复处理。
+默认会依赖命名规则跳过已格式化文件；这些信息可用于排查问题和审计执行结果。
 
 ## 适用范围
 

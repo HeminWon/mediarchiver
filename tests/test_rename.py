@@ -1,10 +1,11 @@
 import json
+from builtins import open as builtin_open
 
 import pytest
 
 from mediarchiver.cli import build_parser as build_root_parser
 from mediarchiver.common.external import CommandLoadResult
-from mediarchiver.common.tool import load_metadata_result
+from mediarchiver.common.tool import is_IMG, is_VID, load_metadata_result
 from mediarchiver.rename import (
     RenameOptions,
     apply_rename_plan,
@@ -21,7 +22,15 @@ from mediarchiver.rename.metadata import (
     build_file_metadata_context,
     load_ffprobe_metadata_result,
 )
-from mediarchiver.rename.rules import generate_new_filename, need_ignore_file, tag_ff_encoder
+from mediarchiver.rename.rules import (
+    clear_md5_cache,
+    deal_with_m,
+    file_number,
+    generate_new_filename,
+    get_md5,
+    need_ignore_file,
+    tag_ff_encoder,
+)
 
 
 def test_parser_can_be_imported_without_side_effects():
@@ -120,6 +129,65 @@ def test_need_ignore_file_keeps_formatted_name_when_enabled(tmp_path):
     assert need_ignore_file(str(tmp_path), file_path.name, options) is False
 
 
+def test_mpg_is_classified_as_video_not_image():
+    assert is_VID("clip.mpg") is True
+    assert is_IMG("clip.mpg") is False
+
+
+def test_file_number_md5_fallback_uses_cached_digest(tmp_path, monkeypatch):
+    media_file = tmp_path / "clip.mov"
+    media_file.write_text("demo", encoding="utf-8")
+    observed = {"count": 0}
+
+    clear_md5_cache()
+
+    def counting_open(file, *args, **kwargs):
+        if str(file) == str(media_file):
+            observed["count"] += 1
+        return builtin_open(file, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", counting_open)
+
+    first = file_number(str(media_file), try_hash=True)
+    second = file_number(str(media_file), try_hash=True)
+
+    assert first == second
+    assert observed["count"] == 1
+
+
+def test_get_md5_cache_invalidates_when_file_changes(tmp_path, monkeypatch):
+    media_file = tmp_path / "clip.mov"
+    media_file.write_text("demo", encoding="utf-8")
+    observed = {"count": 0}
+
+    clear_md5_cache()
+
+    def counting_open(file, *args, **kwargs):
+        if str(file) == str(media_file):
+            observed["count"] += 1
+        return builtin_open(file, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", counting_open)
+
+    first = get_md5(str(media_file))
+    media_file.write_text("demo-updated", encoding="utf-8")
+    second = get_md5(str(media_file))
+
+    assert first != second
+    assert observed["count"] == 2
+
+
+def test_deal_with_m_maps_known_make_with_table_rules():
+    assert deal_with_m("Apple iPhone 15 Pro") == "MiPh"
+    assert deal_with_m("SONY ILCE-7M4") == "MSON"
+    assert deal_with_m("DJI Osmo Pocket 3") == "MDJI"
+
+
+def test_deal_with_m_raises_for_unknown_make():
+    with pytest.raises(ValueError, match="convert failure"):
+        deal_with_m("Unknown Camera Brand")
+
+
 def test_tag_ff_encoder_maps_h264_and_avc_to_avc():
     assert (
         tag_ff_encoder({"streams": [{"codec_type": "video", "tags": {"encoder": "h264"}}]}) == "AVC"
@@ -157,7 +225,6 @@ def test_apply_built_plan_dry_run_writes_operation_log_without_renaming(tmp_path
         "mediarchiver.rename.service.generate_new_filename",
         lambda *_args, **_kwargs: "20240102-030405_MiPh_1234.HEIC",
     )
-    monkeypatch.setattr("mediarchiver.rename.service.get_md5", lambda *_args, **_kwargs: "abc123")
 
     plan = build_rename_plan(str(tmp_path), RenameOptions())
     apply_rename_plan(plan, dry_run=True)
@@ -180,7 +247,6 @@ def test_build_rename_plan_writes_absolute_paths(tmp_path, monkeypatch):
         "mediarchiver.rename.service.generate_new_filename",
         lambda *_args, **_kwargs: "20240102-030405_MiPh_1234.HEIC",
     )
-    monkeypatch.setattr("mediarchiver.rename.service.get_md5", lambda *_args, **_kwargs: "abc123")
 
     plan = build_rename_plan(str(tmp_path), RenameOptions(), workers=2)
 
@@ -293,7 +359,6 @@ def test_apply_rename_plan_dry_run_previews_ready_items(tmp_path):
                 destination=str(tmp_path / "20240102-030405_MiPh_1234.HEIC"),
                 action="rename",
                 status="ready",
-                details={"md5": "abc123"},
             )
         ],
     )
@@ -321,7 +386,6 @@ def test_apply_rename_plan_renames_ready_items(tmp_path):
                 destination=str(tmp_path / "20240102-030405_MiPh_1234.HEIC"),
                 action="rename",
                 status="ready",
-                details={"md5": "abc123"},
             )
         ],
     )
@@ -331,6 +395,40 @@ def test_apply_rename_plan_renames_ready_items(tmp_path):
     assert not source_file.exists()
     assert (tmp_path / "20240102-030405_MiPh_1234.HEIC").exists()
     assert summary["success"] == 1
+
+
+def test_apply_rename_plan_does_not_create_history_file_when_rename_fails(tmp_path, monkeypatch):
+    source_file = tmp_path / "IMG_0001.HEIC"
+    source_file.write_text("demo", encoding="utf-8")
+
+    from mediarchiver.rename.plan import RENAME_PLAN_VERSION, RenamePlan, RenamePlanItem
+
+    plan = RenamePlan(
+        version=RENAME_PLAN_VERSION,
+        operation="rename",
+        source_dir=str(tmp_path.resolve()),
+        options={},
+        items=[
+            RenamePlanItem(
+                source=str(source_file),
+                destination=str(tmp_path / "20240102-030405_MiPh_1234.HEIC"),
+                action="rename",
+                status="ready",
+            )
+        ],
+    )
+
+    def raise_rename(*_args, **_kwargs):
+        raise OSError("disk error")
+
+    monkeypatch.setattr("mediarchiver.rename.service.os.rename", raise_rename)
+
+    summary = apply_rename_plan(plan, dry_run=False)
+
+    assert source_file.exists()
+    assert not (tmp_path / "rename_info.txt").exists()
+    assert summary["skipped"] == 1
+    assert summary["reasons"]["rename_failed"] == 1
 
 
 def test_load_rename_plan_rejects_relative_paths(tmp_path):
@@ -368,16 +466,13 @@ def test_apply_built_plan_records_success(tmp_path, monkeypatch):
         "mediarchiver.rename.service.generate_new_filename",
         lambda *_args, **_kwargs: "20240102-030405_MiPh_1234.HEIC",
     )
-    monkeypatch.setattr("mediarchiver.rename.service.get_md5", lambda *_args, **_kwargs: "abc123")
 
     plan = build_rename_plan(str(tmp_path), RenameOptions())
     summary = apply_rename_plan(plan, dry_run=False)
 
     renamed_file = tmp_path / "20240102-030405_MiPh_1234.HEIC"
     assert renamed_file.exists()
-    assert (tmp_path / "rename_info.txt").read_text(encoding="utf-8").strip() == (
-        "abc123 <= 20240102-030405_MiPh_1234.HEIC <= IMG_0001.HEIC"
-    )
+    assert not (tmp_path / "rename_info.txt").exists()
     operations = (
         (tmp_path / "rename_operations.jsonl").read_text(encoding="utf-8").strip().splitlines()
     )
@@ -561,11 +656,29 @@ def test_build_rename_plan_prefetches_contexts_once_per_candidate(tmp_path, monk
         "mediarchiver.rename.service.generate_new_filename",
         lambda *_args, **_kwargs: "20240102-030405_MiPh_1234.HEIC",
     )
-    monkeypatch.setattr("mediarchiver.rename.service.get_md5", lambda *_args, **_kwargs: "abc123")
 
     build_rename_plan(str(tmp_path), RenameOptions())
 
     assert calls == [str(source_file)]
+
+
+def test_build_rename_plan_marks_duplicate_destinations_as_conflict(tmp_path, monkeypatch):
+    source_a = tmp_path / "IMG_0001.HEIC"
+    source_b = tmp_path / "IMG_0002.HEIC"
+    source_a.write_text("demo-a", encoding="utf-8")
+    source_b.write_text("demo-b", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "mediarchiver.rename.service.generate_new_filename",
+        lambda *_args, **_kwargs: "20240102-030405_MiPh_1234.HEIC",
+    )
+
+    plan = build_rename_plan(str(tmp_path), RenameOptions())
+
+    items = [item for item in plan.items if item.source in {str(source_a), str(source_b)}]
+    assert len(items) == 2
+    assert all(item.status == "conflict" for item in items)
+    assert all(item.reason == "destination_duplicated_in_plan" for item in items)
 
 
 def test_prefetch_file_contexts_respects_requested_workers(monkeypatch):

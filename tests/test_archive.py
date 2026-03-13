@@ -131,6 +131,42 @@ def test_archive_obj_records_metadata_load_failure(tmp_path, monkeypatch):
     assert record["details"]["message"] == "Command failed"
 
 
+def test_archive_obj_records_move_failure(tmp_path, monkeypatch):
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    media_file = source_dir / "IMG_0001.JPG"
+    media_file.write_text("demo", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "mediarchiver.archive.service.get_archive_metadata_error",
+        lambda *_args, **_kwargs: (None, "2024:05:02 03:04:05"),
+    )
+
+    def raise_move(*_args, **_kwargs):
+        raise OSError("move failed")
+
+    monkeypatch.setattr("mediarchiver.archive.service.shutil.move", raise_move)
+
+    from mediarchiver.common.reporting import OperationLogger
+
+    archive_obj(
+        str(source_dir),
+        str(target_dir),
+        media_file.name,
+        report_logger=OperationLogger(source_dir, "archive"),
+    )
+
+    operations = (
+        (source_dir / "archive_operations.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    )
+    record = json.loads(operations[-1])
+    assert record["status"] == "skipped"
+    assert record["reason"] == "move_failed"
+    assert record["details"]["message"] == "move failed"
+
+
 def test_sort_files_prefetches_metadata_once_per_candidate(tmp_path, monkeypatch):
     source_dir = tmp_path / "source"
     source_dir.mkdir()

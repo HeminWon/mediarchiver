@@ -56,7 +56,6 @@ ruff check .
 
 - `rename.log`: rename workflow log
 - `archived.log`: archive workflow log
-- `rename_info.txt`: applied rename history
 - `rename-plan.json`: default rename plan output written into the source directory
 - `rename.sh`: optional shell export generated next to the source directory or plan file
 - `rename_operations.jsonl`: structured rename operation report

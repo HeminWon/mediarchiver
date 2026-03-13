@@ -11,8 +11,8 @@ from mediarchiver.common.external import (
     run_json_command,
 )
 
-VIDEO_EXT_LIST = ["mp4", "m4v", "avi", "mov"]
-IMAGE_EXT_LIST = ["jpg", "png", "mpg", "bmp", "jpeg", "heic", "dng", "arw", "gif"]
+VIDEO_EXT_LIST = ["mp4", "m4v", "avi", "mov", "mpg"]
+IMAGE_EXT_LIST = ["jpg", "png", "bmp", "jpeg", "heic", "dng", "arw", "gif"]
 FILE_EXT_LIST = VIDEO_EXT_LIST + IMAGE_EXT_LIST
 
 
