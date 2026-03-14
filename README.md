@@ -10,12 +10,42 @@ nix develop
 
 The Nix shell provides `python`, `pytest`, `ruff`, `exiftool`, and `ffmpeg`.
 
+Create a local virtual environment inside the Nix shell (recommended):
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -U pip
+python3 -m pip install -e .
+```
+
+This prevents `pip` from trying to modify read-only packages in `/nix/store`.
+
+Quick setup (same steps, automated):
+
+```bash
+./scripts/bootstrap.sh
+source .venv/bin/activate
+```
+
+When to run setup again:
+
+- You updated `pyproject.toml` or `requirements.txt`
+- You recreated or deleted `.venv`
+- You changed `scripts/bootstrap.sh` and want to apply the new setup behavior
+
 ## Run
 
 Install the package in editable mode if you want the `mediarchiver` command:
 
 ```bash
-python -m pip install -e .
+python3 -m pip install -e .
+```
+
+If you created `.venv`, activate it first:
+
+```bash
+source .venv/bin/activate
 ```
 
 Then use the unified CLI:

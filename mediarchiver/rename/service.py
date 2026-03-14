@@ -31,6 +31,7 @@ def prefetch_file_contexts(file_paths, workers=None):
         build_file_metadata_context,
         requested_workers=workers,
         default_max_workers=MAX_CONTEXT_PREFETCH_WORKERS,
+        progress_desc="Prefetch metadata",
     )
 
 

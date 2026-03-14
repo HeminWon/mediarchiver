@@ -9,7 +9,7 @@ description = "Media rename and archive CLI powered by Exif metadata"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
-  "tqdm==4.66.1",
+  "tqdm==4.67.1",
 ]
 
 [project.optional-dependencies]
