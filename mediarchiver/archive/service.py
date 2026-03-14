@@ -1,7 +1,6 @@
 import logging
 import os
 import shutil
-from concurrent.futures import ThreadPoolExecutor
 
 from tqdm import tqdm
 
@@ -11,7 +10,7 @@ from mediarchiver.common.tool import (
     get_media_date_from_metadata,
     load_metadata_result,
 )
-from mediarchiver.common.workers import resolve_worker_count
+from mediarchiver.common.workers import map_with_workers, resolve_worker_count
 
 MAX_METADATA_PREFETCH_WORKERS = 4
 
@@ -25,11 +24,12 @@ def get_prefetch_workers(item_count, requested_workers=None):
 
 
 def prefetch_archive_metadata(file_paths, workers=None):
-    if not file_paths:
-        return {}
-    with ThreadPoolExecutor(max_workers=get_prefetch_workers(len(file_paths), workers)) as executor:
-        results = executor.map(get_archive_metadata_error, file_paths)
-        return dict(zip(file_paths, results))
+    return map_with_workers(
+        file_paths,
+        get_archive_metadata_error,
+        requested_workers=workers,
+        default_max_workers=MAX_METADATA_PREFETCH_WORKERS,
+    )
 
 
 def get_archive_metadata_error(file_path):

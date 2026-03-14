@@ -637,7 +637,7 @@ def test_apply_built_plan_records_metadata_load_failure_reason(tmp_path, monkeyp
     from mediarchiver.common.external import build_command_load_error
     from mediarchiver.rename.metadata import FileMetadataContext
 
-    def fake_context(_file_path, parallel_reads=True):
+    def fake_context(_file_path):
         return FileMetadataContext(
             file_path=str(source_file),
             exif_result=build_command_load_error("exiftool", "command_failed", "Command failed"),
@@ -669,7 +669,7 @@ def test_build_rename_plan_prefetches_contexts_once_per_candidate(tmp_path, monk
     source_file.write_text("demo", encoding="utf-8")
     calls = []
 
-    def fake_context(file_path, parallel_reads=True):
+    def fake_context(file_path):
         calls.append(file_path)
         return FileMetadataContext(
             file_path=file_path,
@@ -733,8 +733,8 @@ def test_prefetch_file_contexts_respects_requested_workers(monkeypatch):
         def map(self, func, items):
             return [func(item) for item in items]
 
-    def fake_context(file_path, parallel_reads=True):
-        calls.append((file_path, parallel_reads))
+    def fake_context(file_path):
+        calls.append(file_path)
         return FileMetadataContext(
             file_path=file_path,
             exif_result=CommandLoadResult(tool_name="exiftool", data={}),
@@ -747,9 +747,9 @@ def test_prefetch_file_contexts_respects_requested_workers(monkeypatch):
             is_live_photo_video=False,
         )
 
-    monkeypatch.setattr("mediarchiver.rename.service.ThreadPoolExecutor", DummyExecutor)
+    monkeypatch.setattr("mediarchiver.common.workers.ThreadPoolExecutor", DummyExecutor)
     monkeypatch.setattr("mediarchiver.rename.service.build_file_metadata_context", fake_context)
-    monkeypatch.setattr("mediarchiver.rename.service.os.cpu_count", lambda: 8)
+    monkeypatch.setattr("mediarchiver.common.workers.os.cpu_count", lambda: 8)
 
     from mediarchiver.rename.service import prefetch_file_contexts
 
@@ -757,7 +757,41 @@ def test_prefetch_file_contexts_respects_requested_workers(monkeypatch):
 
     assert observed["max_workers"] == 2
     assert list(result) == ["a.jpg", "b.jpg", "c.jpg"]
-    assert calls == [("a.jpg", False), ("b.jpg", False), ("c.jpg", False)]
+    assert calls == ["a.jpg", "b.jpg", "c.jpg"]
+
+
+def test_build_file_metadata_context_loads_video_tools_sequentially(tmp_path, monkeypatch):
+    video_file = tmp_path / "clip.mov"
+    video_file.write_text("demo", encoding="utf-8")
+    call_order = []
+
+    def fake_load_metadata_result(_file_path):
+        call_order.append("exif")
+        return CommandLoadResult(
+            tool_name="exiftool",
+            data={"DateTimeOriginal": "2024:01:02 03:04:05", "Make": "Apple"},
+        )
+
+    def fake_load_ffprobe_metadata_result(_file_path):
+        call_order.append("ffprobe")
+        return CommandLoadResult(
+            tool_name="ffprobe",
+            data={"streams": [{"codec_type": "video", "width": 1920, "height": 1080}]},
+        )
+
+    monkeypatch.setattr(
+        "mediarchiver.rename.metadata.load_metadata_result", fake_load_metadata_result
+    )
+    monkeypatch.setattr(
+        "mediarchiver.rename.metadata.load_ffprobe_metadata_result",
+        fake_load_ffprobe_metadata_result,
+    )
+
+    context = build_file_metadata_context(str(video_file))
+
+    assert context.exif_metadata is not None
+    assert context.ffprobe_metadata is not None
+    assert call_order == ["exif", "ffprobe"]
 
 
 def test_rename_prefetch_workers_are_clamped(monkeypatch):

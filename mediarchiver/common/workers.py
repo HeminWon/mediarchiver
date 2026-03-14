@@ -1,5 +1,6 @@
 import argparse
 import os
+from concurrent.futures import ThreadPoolExecutor
 
 
 def positive_int(value):
@@ -15,3 +16,16 @@ def resolve_worker_count(item_count, requested_workers=None, default_max_workers
     cpu_count = os.cpu_count() or 1
     max_workers = default_max_workers if requested_workers is None else requested_workers
     return max(1, min(max_workers, cpu_count, item_count))
+
+
+def map_with_workers(items, func, requested_workers=None, default_max_workers=4):
+    if not items:
+        return {}
+    with ThreadPoolExecutor(
+        max_workers=resolve_worker_count(
+            len(items),
+            requested_workers=requested_workers,
+            default_max_workers=default_max_workers,
+        )
+    ) as executor:
+        return dict(zip(items, executor.map(func, items)))

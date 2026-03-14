@@ -1,11 +1,10 @@
 import logging
 import os
-from concurrent.futures import ThreadPoolExecutor
 
 from tqdm import tqdm
 
 from mediarchiver.common.reporting import OperationLogger
-from mediarchiver.common.workers import resolve_worker_count
+from mediarchiver.common.workers import map_with_workers, resolve_worker_count
 from mediarchiver.rename.metadata import build_file_metadata_context, get_context_load_error
 from mediarchiver.rename.options import RenameOptions
 from mediarchiver.rename.plan import RENAME_PLAN_VERSION, RenamePlan, RenamePlanItem
@@ -27,15 +26,12 @@ def get_prefetch_workers(item_count, requested_workers=None):
 
 
 def prefetch_file_contexts(file_paths, workers=None):
-    if not file_paths:
-        return {}
-
-    def load_prefetched_context(file_path):
-        return build_file_metadata_context(file_path, parallel_reads=False)
-
-    with ThreadPoolExecutor(max_workers=get_prefetch_workers(len(file_paths), workers)) as executor:
-        contexts = executor.map(load_prefetched_context, file_paths)
-        return dict(zip(file_paths, contexts))
+    return map_with_workers(
+        file_paths,
+        build_file_metadata_context,
+        requested_workers=workers,
+        default_max_workers=MAX_CONTEXT_PREFETCH_WORKERS,
+    )
 
 
 def build_rename_plan(source, options=None, workers=None):

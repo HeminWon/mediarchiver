@@ -206,12 +206,12 @@ def test_prefetch_archive_metadata_respects_requested_workers(monkeypatch):
         def map(self, func, items):
             return [func(item) for item in items]
 
-    monkeypatch.setattr("mediarchiver.archive.service.ThreadPoolExecutor", DummyExecutor)
+    monkeypatch.setattr("mediarchiver.common.workers.ThreadPoolExecutor", DummyExecutor)
     monkeypatch.setattr(
         "mediarchiver.archive.service.get_archive_metadata_error",
         lambda file_path: (None, f"date:{file_path}"),
     )
-    monkeypatch.setattr("mediarchiver.archive.service.os.cpu_count", lambda: 8)
+    monkeypatch.setattr("mediarchiver.common.workers.os.cpu_count", lambda: 8)
 
     from mediarchiver.archive.service import prefetch_archive_metadata
 
