@@ -46,7 +46,7 @@ def register_subparser(subparsers):
 
 def run_with_args(args):
     destination = args.to if args.to else args.source
-    configure_logging("archived.log")
+    log_path = configure_logging("archived.log")
     preflight_check_commands(["exiftool"])
     print_run_header(
         "archive",
@@ -55,6 +55,7 @@ def run_with_args(args):
             "destination": destination,
             "dry_run": args.dry_run,
             "workers": args.workers,
+            "log": log_path,
         },
     )
     summary = sort_files(args.source, destination, dry_run=args.dry_run, workers=args.workers)

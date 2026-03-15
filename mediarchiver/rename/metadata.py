@@ -44,7 +44,7 @@ def load_ffprobe_metadata_result(file_path):
         )
 
 
-def get_video_metadate_ff(metadata):
+def get_video_metadata_ff(metadata):
     streams = metadata.get("streams", None)
     if streams is None:
         return None
@@ -64,7 +64,7 @@ class FileMetadataContext:
     media_date: Optional[str]
     is_image: bool
     is_video: bool
-    is_live_photo_video: Optional[bool]
+    is_live_photo_video: bool
 
     @property
     def file_name(self):

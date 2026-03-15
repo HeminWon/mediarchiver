@@ -102,7 +102,7 @@ def _default_shell_path(base_path):
 
 
 def run_with_args(args):
-    configure_logging("rename.log")
+    log_path = configure_logging("rename.log")
     preflight_check_commands(["exiftool", "ffprobe"])
 
     if args.plan:
@@ -115,6 +115,7 @@ def run_with_args(args):
                 "apply": args.apply,
                 "dry_run": args.dry_run,
                 "shell": shell_path,
+                "log": log_path,
             },
         )
         plan = load_rename_plan(plan_path)
@@ -150,6 +151,7 @@ def run_with_args(args):
             "workers": args.workers,
             "plan": plan_path,
             "shell": shell_path,
+            "log": log_path,
         },
     )
     plan = build_rename_plan(args.source, options, workers=args.workers)

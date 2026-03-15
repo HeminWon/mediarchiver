@@ -16,6 +16,27 @@ VIDEO_EXT_LIST = ["mp4", "m4v", "avi", "mov", "mpg"]
 IMAGE_EXT_LIST = ["jpg", "png", "bmp", "jpeg", "heic", "dng", "arw", "gif"]
 FILE_EXT_LIST = VIDEO_EXT_LIST + IMAGE_EXT_LIST
 
+SONY_XML_PATTERN = re.compile(r"^(.+)(M\d+\.XML)$", re.IGNORECASE)
+
+
+def is_sony_xml(filename):
+    """Return True if the file is a SONY sidecar XML (e.g. C0212M01.XML, C0212M02.XML)."""
+    return bool(SONY_XML_PATTERN.match(os.path.basename(filename)))
+
+
+def sony_xml_video_stem(filename):
+    """
+    Given a SONY XML filename, return (video_stem, suffix) tuple.
+    e.g. 'C0212M01.XML' -> ('C0212', 'M01.XML')
+         'C0212M02.XML' -> ('C0212', 'M02.XML')
+    Returns None if not a SONY XML file.
+    """
+    name = os.path.basename(filename)
+    match = SONY_XML_PATTERN.match(name)
+    if match:
+        return match.group(1), match.group(2)
+    return None
+
 
 def is_valid_date(text):
     if not isinstance(text, str) or len(text) == 0:
@@ -76,17 +97,9 @@ def is_VID(filename):
     return ext.lower() in VIDEO_EXT_LIST
 
 
-def is_live_photo_VID(filename):
-    """
-    Determining if it is a livephoto through exif.
-    """
-    metadata = get_metadata(filename)
-    return is_live_photo_video_from_metadata(filename, metadata)
-
-
 def is_live_photo_video_from_metadata(filename, metadata):
     if metadata is None:
-        return None
+        return False
     liveP = metadata.get(
         "LivePhotoVitalityScore",
         metadata.get("LivePhotoVitalityScoringVersion", metadata.get("ContentIdentifier", None)),
@@ -95,7 +108,7 @@ def is_live_photo_video_from_metadata(filename, metadata):
         return False
     f, e = os.path.splitext(filename)
     ext = e[1:]
-    return liveP is not None and ext.lower() in ["mov"]
+    return ext.lower() in ["mov"]
 
 
 def get_metadata(file_path):

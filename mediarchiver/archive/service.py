@@ -15,14 +15,6 @@ from mediarchiver.common.workers import map_with_workers, resolve_worker_count
 MAX_METADATA_PREFETCH_WORKERS = 4
 
 
-def get_prefetch_workers(item_count, requested_workers=None):
-    return resolve_worker_count(
-        item_count,
-        requested_workers=requested_workers,
-        default_max_workers=MAX_METADATA_PREFETCH_WORKERS,
-    )
-
-
 def prefetch_archive_metadata(file_paths, workers=None):
     return map_with_workers(
         file_paths,
@@ -89,7 +81,7 @@ def archive_obj(
         return
 
     if date is None:
-        logging.info(f"date is invalid: {obj}")
+        logging.error(f"date is invalid: {obj}")
         if report_logger is not None:
             report_logger.record("archive", file_path, status="skipped", reason="invalid_date")
         return
@@ -152,7 +144,12 @@ def archive_obj(
 
 def sort_files(folder_path, target_path, dry_run=False, workers=None):
     report_logger = OperationLogger(folder_path, "archive")
-    objects = sorted(os.listdir(folder_path))
+    if not os.path.isdir(folder_path):
+        raise ValueError(f"source directory does not exist: {folder_path}")
+    try:
+        objects = sorted(os.listdir(folder_path))
+    except PermissionError as exc:
+        raise PermissionError(f"cannot read source directory: {folder_path}") from exc
     metadata_cache = prefetch_archive_metadata(
         [
             os.path.join(folder_path, obj)

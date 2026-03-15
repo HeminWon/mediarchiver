@@ -11,6 +11,7 @@ from mediarchiver.rename.plan import RENAME_PLAN_VERSION, RenamePlan, RenamePlan
 from mediarchiver.rename.rules import (
     generate_new_filename,
     is_formatted_file_name,
+    is_sony_xml,
     need_ignore_file,
 )
 
@@ -38,7 +39,12 @@ def prefetch_file_contexts(file_paths, workers=None):
 def build_rename_plan(source, options=None, workers=None):
     options = options or RenameOptions()
     source_dir = os.path.abspath(source)
-    objects = sorted(os.listdir(source_dir))
+    if not os.path.isdir(source_dir):
+        raise ValueError(f"source directory does not exist: {source_dir}")
+    try:
+        objects = sorted(os.listdir(source_dir))
+    except PermissionError as exc:
+        raise PermissionError(f"cannot read source directory: {source_dir}") from exc
     context_cache = prefetch_file_contexts(
         [
             os.path.join(source_dir, obj)
@@ -105,7 +111,7 @@ def build_rename_plan(source, options=None, workers=None):
                     )
                 )
                 continue
-            if is_formatted_file_name(new_file_name) is False:
+            if is_formatted_file_name(new_file_name) is False and not is_sony_xml(file_path):
                 logging.error(f"formated file name is error: {obj} => {new_file_name}")
                 items.append(
                     RenamePlanItem(
@@ -190,6 +196,7 @@ def build_rename_plan(source, options=None, workers=None):
         options={
             "loose": options.loose,
             "include_formatted": options.include_formatted,
+            "time_offset_minutes": options.time_offset_minutes,
             "workers": workers,
         },
         items=items,

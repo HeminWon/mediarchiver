@@ -20,6 +20,7 @@ from mediarchiver.rename.cli import validate_args
 from mediarchiver.rename.metadata import (
     FileMetadataContext,
     build_file_metadata_context,
+    get_video_metadata_ff,
     load_ffprobe_metadata_result,
 )
 from mediarchiver.rename.rules import (
@@ -30,9 +31,12 @@ from mediarchiver.rename.rules import (
     generate_new_filename,
     get_md5,
     need_ignore_file,
+    tag_c,
     tag_ff_encoder,
     tag_ff_log,
-    tag_ff_resolutation,
+    tag_ff_resolution,
+    tag_l,
+    tag_m,
 )
 
 
@@ -198,7 +202,7 @@ def test_calculate_resolution_maps_known_and_unknown_sizes():
 
 def test_tag_ff_resolution_reads_video_dimensions():
     assert (
-        tag_ff_resolutation({"streams": [{"codec_type": "video", "width": 3840, "height": 2160}]})
+        tag_ff_resolution({"streams": [{"codec_type": "video", "width": 3840, "height": 2160}]})
         == "4K"
     )
 
@@ -882,3 +886,156 @@ def test_validate_args_rejects_invalid_time_offset_format():
     args = parser.parse_args(["input-dir", "--time-offset", "8:00"])
     with pytest.raises(SystemExit):
         validate_args(parser, args)
+
+
+# --- calculate_resolution ---
+
+
+def test_calculate_resolution_returns_none_for_none_width():
+    assert calculate_resolution(None, 1080) is None
+
+
+def test_calculate_resolution_returns_none_for_none_height():
+    assert calculate_resolution(1920, None) is None
+
+
+def test_calculate_resolution_returns_none_for_both_none():
+    assert calculate_resolution(None, None) is None
+
+
+# --- tag_m ---
+
+
+def test_tag_m_reads_make_field():
+    assert tag_m({"Make": "Apple"}) == "MiPh"
+
+
+def test_tag_m_falls_back_to_model():
+    assert tag_m({"Model": "ILCE-7M4"}) == "MSON"
+
+
+def test_tag_m_falls_back_to_device_model_name():
+    assert tag_m({"DeviceModelName": "ILCE-7M4"}) == "MSON"
+
+
+def test_tag_m_returns_none_when_all_missing():
+    assert tag_m({}) is None
+
+
+def test_tag_m_prefers_make_over_model():
+    assert tag_m({"Make": "Apple", "Model": "ILCE-7M4"}) == "MiPh"
+
+
+# --- tag_c ---
+
+
+def test_tag_c_returns_cs_for_screenshot():
+    assert tag_c({"UserComment": "Screenshot"}) == "CS"
+
+
+def test_tag_c_returns_none_for_normal_photo():
+    assert tag_c({"UserComment": "normal"}) is None
+
+
+def test_tag_c_returns_none_when_comment_missing():
+    assert tag_c({}) is None
+
+
+# --- tag_l ---
+
+
+def test_tag_l_returns_lf_for_front_lens():
+    assert tag_l({"LensID": "iPhone front camera 2.87mm f/2.2"}) == "LF"
+
+
+def test_tag_l_returns_none_for_rear_lens():
+    assert tag_l({"LensID": "iPhone back camera 4.25mm f/1.8"}) is None
+
+
+def test_tag_l_returns_none_when_lens_missing():
+    assert tag_l({}) is None
+
+
+# --- is_sony_xml / sony_xml_video_stem ---
+
+
+def test_is_sony_xml_recognises_m01():
+    from mediarchiver.common.tool import is_sony_xml
+    assert is_sony_xml("C0212M01.XML") is True
+
+
+def test_is_sony_xml_recognises_m02():
+    from mediarchiver.common.tool import is_sony_xml
+    assert is_sony_xml("C0212M02.XML") is True
+
+
+def test_is_sony_xml_rejects_mp4():
+    from mediarchiver.common.tool import is_sony_xml
+    assert is_sony_xml("C0212.MP4") is False
+
+
+def test_sony_xml_video_stem_returns_tuple():
+    from mediarchiver.common.tool import sony_xml_video_stem
+    assert sony_xml_video_stem("C0212M01.XML") == ("C0212", "M01.XML")
+
+
+def test_sony_xml_video_stem_returns_none_for_non_xml():
+    from mediarchiver.common.tool import sony_xml_video_stem
+    assert sony_xml_video_stem("C0212.MP4") is None
+
+
+# --- sony_xml_match_video ---
+
+
+def test_sony_xml_match_video_finds_paired_mp4(tmp_path):
+    from mediarchiver.rename.rules import sony_xml_match_video
+    mp4 = tmp_path / "C0212.MP4"
+    mp4.write_text("dummy")
+    xml = tmp_path / "C0212M01.XML"
+    xml.write_text("<xml/>")
+    result = sony_xml_match_video(str(tmp_path), "C0212M01.XML")
+    assert result == str(mp4)
+
+
+def test_sony_xml_match_video_returns_none_when_no_video(tmp_path):
+    from mediarchiver.rename.rules import sony_xml_match_video
+    xml = tmp_path / "C0212M01.XML"
+    xml.write_text("<xml/>")
+    assert sony_xml_match_video(str(tmp_path), "C0212M01.XML") is None
+
+
+# --- live_photo_match_image ---
+
+
+def test_live_photo_match_image_finds_paired_heic(tmp_path):
+    from mediarchiver.rename.rules import live_photo_match_image, _live_photo_image_lookup
+    _live_photo_image_lookup.cache_clear()
+    img = tmp_path / "IMG_1234.HEIC"
+    img.write_text("dummy")
+    result = live_photo_match_image(str(tmp_path), "1234")
+    assert result == str(img)
+
+
+def test_live_photo_match_image_returns_none_when_missing(tmp_path):
+    from mediarchiver.rename.rules import live_photo_match_image, _live_photo_image_lookup
+    _live_photo_image_lookup.cache_clear()
+    assert live_photo_match_image(str(tmp_path), "9999") is None
+
+
+# --- build_rename_plan directory guards ---
+
+
+def test_build_rename_plan_raises_for_nonexistent_source():
+    from mediarchiver.rename.service import build_rename_plan
+    with pytest.raises(ValueError, match="does not exist"):
+        build_rename_plan("/nonexistent/path/xyz")
+
+
+# --- is_live_photo_video_from_metadata returns bool ---
+
+
+def test_is_live_photo_video_from_metadata_returns_false_for_none_metadata():
+    from mediarchiver.common.tool import is_live_photo_video_from_metadata
+    result = is_live_photo_video_from_metadata("clip.mov", None)
+    assert result is False
+    assert isinstance(result, bool)
