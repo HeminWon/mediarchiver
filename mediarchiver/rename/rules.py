@@ -9,6 +9,7 @@ from functools import lru_cache
 from mediarchiver.common.tool import (
     FILE_EXT_LIST,
     IMAGE_EXT_LIST,
+    apply_time_offset_to_date,
 )
 from mediarchiver.rename.metadata import (
     FileMetadataContext,
@@ -361,6 +362,8 @@ def generate_new_filename_prefix(folder_path, obj=None, options=None):
     if date is None:
         logging.error(f"date is invalid: {obj}")
         return None
+    if options.time_offset_minutes is not None:
+        date = apply_time_offset_to_date(date, options.time_offset_minutes)
     items = []
     formatted = formatted_date(date)
     if formatted is None:

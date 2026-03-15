@@ -5,7 +5,7 @@ import pytest
 
 from mediarchiver.cli import build_parser as build_root_parser
 from mediarchiver.common.external import CommandLoadResult
-from mediarchiver.common.tool import is_IMG, is_VID, load_metadata_result
+from mediarchiver.common.tool import is_IMG, is_VID, load_metadata_result, parse_time_offset, apply_time_offset_to_date
 from mediarchiver.rename import (
     RenameOptions,
     apply_rename_plan,
@@ -802,3 +802,83 @@ def test_rename_prefetch_workers_are_clamped(monkeypatch):
     assert get_prefetch_workers(1, requested_workers=8) == 1
     assert get_prefetch_workers(5, requested_workers=8) == 2
     assert get_prefetch_workers(5) == 2
+
+
+# --- time offset 相关测试 ---
+
+
+def test_parse_time_offset_positive_whole_hour():
+    assert parse_time_offset("+8:00") == 480
+
+
+def test_parse_time_offset_negative_whole_hour():
+    assert parse_time_offset("-5:00") == -300
+
+
+def test_parse_time_offset_half_hour():
+    assert parse_time_offset("+5:30") == 330
+
+
+def test_parse_time_offset_forty_five_minutes():
+    assert parse_time_offset("+5:45") == 345
+
+
+def test_parse_time_offset_none_returns_none():
+    assert parse_time_offset(None) is None
+
+
+def test_parse_time_offset_zero():
+    assert parse_time_offset("+0:00") == 0
+
+
+def test_parse_time_offset_invalid_format_raises():
+    with pytest.raises(ValueError, match="invalid time offset format"):
+        parse_time_offset("8:00")
+
+
+def test_parse_time_offset_invalid_minutes_raises():
+    with pytest.raises(ValueError):
+        parse_time_offset("+8:60")
+
+
+def test_apply_time_offset_adds_hours():
+    assert apply_time_offset_to_date("2024:03:15 10:00:00", 60) == "2024:03:15 11:00:00"
+
+
+def test_apply_time_offset_subtracts_hours():
+    assert apply_time_offset_to_date("2024:03:15 10:00:00", -120) == "2024:03:15 08:00:00"
+
+
+def test_apply_time_offset_crosses_day_boundary():
+    assert apply_time_offset_to_date("2024:03:15 23:00:00", 90) == "2024:03:16 00:30:00"
+
+
+def test_apply_time_offset_half_hour():
+    assert apply_time_offset_to_date("2024:03:15 10:00:00", 330) == "2024:03:15 15:30:00"
+
+
+def test_apply_time_offset_zero_returns_unchanged():
+    assert apply_time_offset_to_date("2024:03:15 10:00:00", 0) == "2024:03:15 10:00:00"
+
+
+def test_apply_time_offset_none_offset_returns_unchanged():
+    assert apply_time_offset_to_date("2024:03:15 10:00:00", None) == "2024:03:15 10:00:00"
+
+
+def test_parser_supports_time_offset_flag():
+    parser = build_parser()
+    args = parser.parse_args(["input-dir", "--time-offset", "+8:00"])
+    assert args.time_offset == "+8:00"
+
+
+def test_parser_time_offset_defaults_to_none():
+    parser = build_parser()
+    args = parser.parse_args(["input-dir"])
+    assert args.time_offset is None
+
+
+def test_validate_args_rejects_invalid_time_offset_format():
+    parser = build_parser()
+    args = parser.parse_args(["input-dir", "--time-offset", "8:00"])
+    with pytest.raises(SystemExit):
+        validate_args(parser, args)

@@ -4,6 +4,7 @@ import os
 from mediarchiver.common.console import print_plan_summary, print_run_header, print_run_summary
 from mediarchiver.common.external import preflight_check_commands
 from mediarchiver.common.logging_utils import configure_logging
+from mediarchiver.common.tool import parse_time_offset
 from mediarchiver.common.workers import positive_int
 from mediarchiver.rename.options import RenameOptions
 from mediarchiver.rename.plan import export_rename_plan_shell, load_rename_plan, write_rename_plan
@@ -43,6 +44,14 @@ def configure_parser(parser):
         default=None,
         help="metadata prefetch workers (default: auto)",
     )
+    parser.add_argument(
+        "--time-offset",
+        dest="time_offset",
+        type=str,
+        default=None,
+        metavar="±HH:MM",
+        help="shift EXIF time by offset, e.g. +8:00, -5:30, +5:45",
+    )
     parser.add_argument("--apply", action="store_true", default=False, help="apply rename actions")
     parser.add_argument(
         "--shell",
@@ -77,6 +86,11 @@ def validate_args(parser, args):
         parser.error("scan options cannot be used with --plan")
     if args.dry_run and not (args.apply or args.plan):
         parser.error("--dry-run requires --apply or --plan")
+    if getattr(args, "time_offset", None) is not None:
+        try:
+            parse_time_offset(args.time_offset)
+        except ValueError as exc:
+            parser.error(str(exc))
 
 
 def _default_plan_path(source):
@@ -120,6 +134,7 @@ def run_with_args(args):
     options = RenameOptions(
         loose=args.loose,
         include_formatted=args.include_formatted,
+        time_offset_minutes=parse_time_offset(getattr(args, "time_offset", None)),
     )
     plan_path = _default_plan_path(args.source)
     shell_path = _default_shell_path(plan_path) if args.shell else None
@@ -129,6 +144,7 @@ def run_with_args(args):
             "source": args.source,
             "loose": options.loose,
             "include_formatted": options.include_formatted,
+            "time_offset": getattr(args, "time_offset", None),
             "apply": args.apply,
             "dry_run": args.dry_run,
             "workers": args.workers,

@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+from datetime import datetime, timedelta
 
 from mediarchiver.common.external import (
     CommandLoadResult,
@@ -22,6 +23,45 @@ def is_valid_date(text):
     pattern = r"\b\d{4}:\d{2}:\d{2}\s\d{2}:\d{2}:\d{2}([+-]\d{2}:\d{2})?\b"
     match = re.fullmatch(pattern, text)
     return bool(match)
+
+
+def parse_time_offset(offset_str):
+    """
+    解析 ±HH:MM 格式的时间偏移字符串，返回总分钟数。
+    例如: "+8:00" -> 480, "-5:30" -> -330, "+5:45" -> 345
+    """
+    if offset_str is None:
+        return None
+    pattern = r"^([+-])(\d{1,2}):(\d{2})$"
+    match = re.fullmatch(pattern, offset_str.strip())
+    if not match:
+        raise ValueError(
+            f"invalid time offset format: '{offset_str}', expected ±HH:MM (e.g. +8:00, -5:30)"
+        )
+    sign = 1 if match.group(1) == "+" else -1
+    hours = int(match.group(2))
+    minutes = int(match.group(3))
+    if minutes >= 60:
+        raise ValueError(f"invalid minutes in time offset: '{offset_str}'")
+    return sign * (hours * 60 + minutes)
+
+
+def apply_time_offset_to_date(date_str, offset_minutes):
+    """
+    对 EXIF 日期字符串（格式：YYYY:MM:DD HH:MM:SS）应用分钟偏移，
+    返回同格式字符串。
+    """
+    if date_str is None or offset_minutes is None or offset_minutes == 0:
+        return date_str
+    dt_part = re.match(r"\d{4}:\d{2}:\d{2}\s\d{2}:\d{2}:\d{2}", date_str)
+    if not dt_part:
+        return date_str
+    try:
+        dt = datetime.strptime(dt_part.group(), "%Y:%m:%d %H:%M:%S")
+        dt = dt + timedelta(minutes=offset_minutes)
+        return dt.strftime("%Y:%m:%d %H:%M:%S")
+    except ValueError:
+        return date_str
 
 
 def is_IMG(filename):
