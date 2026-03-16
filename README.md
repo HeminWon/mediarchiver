@@ -2,7 +2,30 @@
 
 A tool for archiving and renaming media files using Exif metadata.
 
-## Requirements
+## Installation
+
+### pipx（推荐）
+
+从 GitHub 安装最新版本：
+
+```bash
+pipx install "git+https://github.com/heminwon/mediarchiver.git"
+```
+
+或安装指定版本：
+
+```bash
+pipx install "git+https://github.com/heminwon/mediarchiver.git@v0.1.0"
+```
+
+> 安装前请确保系统已安装 `exiftool` 和 `ffmpeg`：
+> ```bash
+> brew install exiftool ffmpeg   # macOS
+> sudo apt install libimage-exiftool-perl ffmpeg   # Ubuntu/Debian
+> ```
+
+
+## Requirements（开发环境）
 
 ```bash
 nix develop
