@@ -61,8 +61,40 @@ def get_quarter(date):
     return None
 
 
+def get_subfolder(date, mode="quarter"):
+    """Return the relative subfolder path for a given date and archive mode.
+
+    Modes:
+      quarter  ->  YYYY/Q{1-4}   (e.g. 2024/Q2)
+      month    ->  YYYY/MM        (e.g. 2024/06)
+      year     ->  YYYY           (e.g. 2024)
+    """
+    if date is None:
+        return None
+    match = re.search(r"(\d{4})[:\-](\d{2})", date)
+    if not match:
+        return None
+    year = match.group(1)
+    month = int(match.group(2))
+    if mode == "year":
+        return year
+    if mode == "month":
+        return f"{year}/{month:02d}"
+    # default: quarter
+    quarter = get_quarter(date)
+    if quarter is None:
+        return None
+    return f"{year}/{quarter}"
+
+
 def archive_obj(
-    folder_path, target_path, obj, dry_run=False, report_logger=None, metadata_cache=None
+    folder_path,
+    target_path,
+    obj,
+    dry_run=False,
+    report_logger=None,
+    metadata_cache=None,
+    mode="quarter",
 ):
     file_path = os.path.join(folder_path, obj)
     if os.path.isdir(file_path):
@@ -98,14 +130,13 @@ def archive_obj(
             report_logger.record("archive", file_path, status="skipped", reason="invalid_date")
         return
 
-    year = date[:4]
-    quarter = get_quarter(date)
-    if quarter is None:
+    subfolder = get_subfolder(date, mode=mode)
+    if subfolder is None:
         if report_logger is not None:
-            report_logger.record("archive", file_path, status="skipped", reason="invalid_quarter")
+            report_logger.record("archive", file_path, status="skipped", reason="invalid_date")
         return
 
-    subfolder_path = os.path.join(target_path, year, quarter)
+    subfolder_path = os.path.join(target_path, subfolder)
     target_file_path = os.path.join(subfolder_path, obj)
 
     if os.path.exists(target_file_path):
@@ -154,7 +185,7 @@ def archive_obj(
             )
 
 
-def sort_files(folder_path, target_path, dry_run=False, workers=None):
+def sort_files(folder_path, target_path, dry_run=False, workers=None, by="quarter"):
     report_logger = OperationLogger(folder_path, "archive")
     if not os.path.isdir(folder_path):
         raise ValueError(f"source directory does not exist: {folder_path}")
@@ -181,6 +212,7 @@ def sort_files(folder_path, target_path, dry_run=False, workers=None):
             dry_run=dry_run,
             report_logger=report_logger,
             metadata_cache=metadata_cache,
+            mode=by,
         )
     process_objs.close()
     return report_logger.summary.as_dict()

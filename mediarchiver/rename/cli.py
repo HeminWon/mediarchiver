@@ -1,8 +1,18 @@
 import argparse
 import os
+import sys
 
-from mediarchiver.common.console import print_plan_summary, print_run_header, print_run_summary
-from mediarchiver.common.external import preflight_check_commands
+from mediarchiver.common.console import (
+    confirm_proceed,
+    print_plan_summary,
+    print_run_header,
+    print_run_summary,
+)
+from mediarchiver.common.external import (
+    DependencyMissingError,
+    format_missing_dependency_message,
+    preflight_check_commands,
+)
 from mediarchiver.common.logging_utils import configure_logging
 from mediarchiver.common.tool import parse_time_offset
 from mediarchiver.common.workers import positive_int
@@ -53,6 +63,14 @@ def configure_parser(parser):
         help="shift EXIF time by offset, e.g. +8:00, -5:30, +5:45",
     )
     parser.add_argument("--apply", action="store_true", default=False, help="apply rename actions")
+    parser.add_argument(
+        "--yes",
+        "-y",
+        dest="yes",
+        action="store_true",
+        default=False,
+        help="skip confirmation prompt before applying",
+    )
     parser.add_argument(
         "--shell",
         action="store_true",
@@ -126,6 +144,15 @@ def run_with_args(args):
         if shell_path is not None:
             export_rename_plan_shell(plan, shell_path)
         if args.apply or args.dry_run:
+            if args.apply and not args.dry_run and not getattr(args, "yes", False):
+                s = plan.summary
+                print(
+                    f"[rename] ready: {s['ready']} file(s), "
+                    f"skipped: {s['skipped']}, conflict: {s['conflict']}"
+                )
+                if not confirm_proceed("Apply rename?"):
+                    print("[rename] aborted.")
+                    return
             summary = apply_rename_plan(plan, dry_run=args.dry_run)
             print_run_summary("rename", summary)
             return
@@ -158,6 +185,15 @@ def run_with_args(args):
     if shell_path is not None:
         export_rename_plan_shell(plan, shell_path)
     if args.apply:
+        if not args.dry_run and not getattr(args, "yes", False):
+            s = plan.summary
+            print(
+                f"[rename] ready: {s['ready']} file(s), "
+                f"skipped: {s['skipped']}, conflict: {s['conflict']}"
+            )
+            if not confirm_proceed("Apply rename?"):
+                print("[rename] aborted.")
+                return
         summary = apply_rename_plan(plan, dry_run=args.dry_run)
         print_run_summary("rename", summary)
         return
@@ -175,4 +211,8 @@ def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
     validate_args(parser, args)
-    return run_with_args(args)
+    try:
+        return run_with_args(args)
+    except DependencyMissingError as exc:
+        print(format_missing_dependency_message(exc.tool_name))
+        sys.exit(1)

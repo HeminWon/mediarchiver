@@ -9,6 +9,7 @@ from mediarchiver.common.external import (
     ExternalToolTimeoutError,
     clear_command_availability_cache,
     ensure_command_available,
+    format_missing_dependency_message,
     run_json_command,
 )
 
@@ -86,3 +87,20 @@ def test_clear_command_availability_cache_resets_cache(monkeypatch):
     ensure_command_available("exiftool")
 
     assert calls["count"] == 2
+
+
+def test_format_missing_dependency_message_includes_tool_name():
+    msg = format_missing_dependency_message("exiftool")
+    assert "exiftool" in msg
+    assert "brew install" in msg
+
+
+def test_format_missing_dependency_message_includes_ffprobe_hint():
+    msg = format_missing_dependency_message("ffprobe")
+    assert "ffprobe" in msg
+    assert "ffmpeg" in msg
+
+
+def test_format_missing_dependency_message_handles_unknown_tool():
+    msg = format_missing_dependency_message("sometool")
+    assert "sometool" in msg

@@ -1,11 +1,18 @@
 import argparse
 import os
+import sys
 
 from mediarchiver.archive.service import sort_files
-from mediarchiver.common.console import print_run_header, print_run_summary
-from mediarchiver.common.external import preflight_check_commands
+from mediarchiver.common.console import confirm_proceed, print_run_header, print_run_summary
+from mediarchiver.common.external import (
+    DependencyMissingError,
+    format_missing_dependency_message,
+    preflight_check_commands,
+)
 from mediarchiver.common.logging_utils import configure_logging
 from mediarchiver.common.workers import positive_int
+
+ARCHIVE_MODES = ("quarter", "month", "year")
 
 
 def configure_parser(parser):
@@ -16,11 +23,25 @@ def configure_parser(parser):
         help="target directory (default: source directory)",
     )
     parser.add_argument(
+        "--by",
+        choices=ARCHIVE_MODES,
+        default="quarter",
+        help="folder grouping: quarter (default), month, or year",
+    )
+    parser.add_argument(
         "--dry-run",
         dest="dry_run",
         action="store_true",
         default=False,
         help="preview moves without changing files",
+    )
+    parser.add_argument(
+        "--yes",
+        "-y",
+        dest="yes",
+        action="store_true",
+        default=False,
+        help="skip confirmation prompt before archiving",
     )
     parser.add_argument(
         "--workers",
@@ -33,13 +54,16 @@ def configure_parser(parser):
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        prog="mediarchiver archive", description="Archive media by year and quarter"
+        prog="mediarchiver archive",
+        description="Archive media by date into year/quarter, year/month, or year folders",
     )
     return configure_parser(parser)
 
 
 def register_subparser(subparsers):
-    parser = subparsers.add_parser("archive", help="archive media into year/quarter folders")
+    parser = subparsers.add_parser(
+        "archive", help="archive media into date-based folders"
+    )
     configure_parser(parser)
     parser.set_defaults(handler=run_with_args)
     return parser
@@ -47,6 +71,7 @@ def register_subparser(subparsers):
 
 def run_with_args(args):
     destination = args.to if args.to else args.source
+    by = getattr(args, "by", "quarter")
     log_path = configure_logging(os.path.abspath(args.source), "archived.log")
     preflight_check_commands(["exiftool"])
     print_run_header(
@@ -54,16 +79,28 @@ def run_with_args(args):
         {
             "source": args.source,
             "destination": destination,
+            "by": by,
             "dry_run": args.dry_run,
             "workers": args.workers,
             "log": log_path,
         },
     )
-    summary = sort_files(args.source, destination, dry_run=args.dry_run, workers=args.workers)
+    if not args.dry_run and not getattr(args, "yes", False):
+        print(f"[archive] will move files from '{args.source}' into '{destination}' (by {by})")
+        if not confirm_proceed("Proceed with archive?"):
+            print("[archive] aborted.")
+            return
+    summary = sort_files(
+        args.source, destination, dry_run=args.dry_run, workers=args.workers, by=by
+    )
     print_run_summary("archive", summary)
 
 
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
-    return run_with_args(args)
+    try:
+        return run_with_args(args)
+    except DependencyMissingError as exc:
+        print(format_missing_dependency_message(exc.tool_name))
+        sys.exit(1)

@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from mediarchiver.archive import archive_obj, build_parser, get_quarter, sort_files
+from mediarchiver.archive import archive_obj, build_parser, get_quarter, get_subfolder, sort_files
 
 
 def test_archive_parser_supports_dry_run_flag():
@@ -242,3 +242,111 @@ def test_get_quarter_returns_none_for_invalid_date():
 def test_get_quarter_works_with_iso_format():
     assert get_quarter("2024-03-15T10:00:00") == "Q1"
     assert get_quarter("2024-07-01T00:00:00") == "Q3"
+
+
+def test_get_subfolder_quarter_mode():
+    assert get_subfolder("2024:05:02 03:04:05", mode="quarter") == "2024/Q2"
+    assert get_subfolder("2024:11:30 00:00:00", mode="quarter") == "2024/Q4"
+    assert get_subfolder("2024:01:01 00:00:00", mode="quarter") == "2024/Q1"
+
+
+def test_get_subfolder_month_mode():
+    assert get_subfolder("2024:05:02 03:04:05", mode="month") == "2024/05"
+    assert get_subfolder("2024:12:31 23:59:59", mode="month") == "2024/12"
+    assert get_subfolder("2024-03-15T10:00:00", mode="month") == "2024/03"
+
+
+def test_get_subfolder_year_mode():
+    assert get_subfolder("2024:05:02 03:04:05", mode="year") == "2024"
+    assert get_subfolder("2023-12-01T00:00:00", mode="year") == "2023"
+
+
+def test_get_subfolder_returns_none_for_none():
+    assert get_subfolder(None) is None
+    assert get_subfolder("not-a-date") is None
+
+
+def test_archive_parser_supports_by_flag():
+    parser = build_parser()
+    args = parser.parse_args(["input-dir", "--by", "month"])
+    assert args.by == "month"
+
+
+def test_archive_parser_by_defaults_to_quarter():
+    parser = build_parser()
+    args = parser.parse_args(["input-dir"])
+    assert args.by == "quarter"
+
+
+def test_archive_parser_rejects_unknown_by_value():
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["input-dir", "--by", "week"])
+
+
+def test_archive_parser_supports_yes_flag():
+    parser = build_parser()
+    args = parser.parse_args(["input-dir", "--yes"])
+    assert args.yes is True
+
+
+def test_archive_obj_month_mode_uses_correct_subfolder(tmp_path, monkeypatch):
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    media_file = source_dir / "IMG_0001.JPG"
+    media_file.write_text("demo", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "mediarchiver.archive.service.get_archive_metadata_error",
+        lambda *_args, **_kwargs: (None, "2024:06:15 12:00:00"),
+    )
+
+    from mediarchiver.common.reporting import OperationLogger
+
+    archive_obj(
+        str(source_dir),
+        str(target_dir),
+        media_file.name,
+        dry_run=True,
+        report_logger=OperationLogger(source_dir, "archive"),
+        mode="month",
+    )
+
+    operations = (
+        (source_dir / "archive_operations.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    )
+    record = json.loads(operations[-1])
+    assert record["destination"].endswith("2024/06/IMG_0001.JPG")
+
+
+def test_archive_obj_year_mode_uses_correct_subfolder(tmp_path, monkeypatch):
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    media_file = source_dir / "IMG_0001.JPG"
+    media_file.write_text("demo", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "mediarchiver.archive.service.get_archive_metadata_error",
+        lambda *_args, **_kwargs: (None, "2023:03:10 08:00:00"),
+    )
+
+    from mediarchiver.common.reporting import OperationLogger
+
+    archive_obj(
+        str(source_dir),
+        str(target_dir),
+        media_file.name,
+        dry_run=True,
+        report_logger=OperationLogger(source_dir, "archive"),
+        mode="year",
+    )
+
+    operations = (
+        (source_dir / "archive_operations.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    )
+    record = json.loads(operations[-1])
+    assert record["destination"].endswith("2023/IMG_0001.JPG")

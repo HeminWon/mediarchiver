@@ -1281,3 +1281,100 @@ def test_configure_logging_writes_to_given_dir(tmp_path):
     assert log_path == str(tmp_path / "test.log")
     logging.info("hello from test")
     assert (tmp_path / "test.log").exists()
+
+
+# --- rename --yes flag ---
+
+
+def test_parser_supports_yes_flag():
+    from mediarchiver.rename.cli import build_parser
+
+    parser = build_parser()
+    args = parser.parse_args(["input-dir", "--apply", "--yes"])
+    assert args.yes is True
+
+
+def test_parser_yes_defaults_to_false():
+    from mediarchiver.rename.cli import build_parser
+
+    parser = build_parser()
+    args = parser.parse_args(["input-dir"])
+    assert args.yes is False
+
+
+def test_apply_rename_calls_confirm_without_yes_flag(tmp_path, monkeypatch):
+    """--apply without --yes should invoke confirm_proceed."""
+    from mediarchiver.rename.cli import build_parser, run_with_args
+
+    source_dir = tmp_path / "src"
+    source_dir.mkdir()
+
+    confirm_calls = []
+    monkeypatch.setattr(
+        "mediarchiver.rename.cli.confirm_proceed",
+        lambda _prompt: confirm_calls.append(_prompt) or False,
+    )
+    monkeypatch.setattr("mediarchiver.common.external.preflight_check_commands", lambda _: None)
+    monkeypatch.setattr(
+        "mediarchiver.common.logging_utils.configure_logging", lambda *a, **k: "/tmp/test.log"
+    )
+    monkeypatch.setattr(
+        "mediarchiver.rename.cli.build_rename_plan",
+        lambda *a, **k: __import__(
+            "mediarchiver.rename.plan", fromlist=["RenamePlan"]
+        ).RenamePlan(
+            version=1,
+            operation="rename",
+            source_dir=str(source_dir),
+            options={},
+            items=[],
+        ),
+    )
+
+    parser = build_parser()
+    args = parser.parse_args([str(source_dir), "--apply"])
+    run_with_args(args)
+
+    assert len(confirm_calls) == 1
+
+
+def test_apply_rename_skips_confirm_with_yes_flag(tmp_path, monkeypatch):
+    """--apply --yes should bypass confirm_proceed entirely."""
+    from mediarchiver.rename.cli import build_parser, run_with_args
+    from mediarchiver.rename.plan import RenamePlan
+
+    source_dir = tmp_path / "src"
+    source_dir.mkdir()
+
+    confirm_calls = []
+    monkeypatch.setattr(
+        "mediarchiver.rename.cli.confirm_proceed",
+        lambda _prompt: confirm_calls.append(_prompt) or True,
+    )
+    monkeypatch.setattr("mediarchiver.common.external.preflight_check_commands", lambda _: None)
+    monkeypatch.setattr(
+        "mediarchiver.common.logging_utils.configure_logging", lambda *a, **k: "/tmp/test.log"
+    )
+    monkeypatch.setattr(
+        "mediarchiver.rename.cli.build_rename_plan",
+        lambda *a, **k: RenamePlan(
+            version=1,
+            operation="rename",
+            source_dir=str(source_dir),
+            options={},
+            items=[],
+        ),
+    )
+    empty_summary = {
+        "total": 0, "success": 0, "preview": 0,
+        "skipped": 0, "conflict": 0, "reasons": {},
+    }
+    monkeypatch.setattr(
+        "mediarchiver.rename.cli.apply_rename_plan", lambda *a, **k: empty_summary
+    )
+
+    parser = build_parser()
+    args = parser.parse_args([str(source_dir), "--apply", "--yes"])
+    run_with_args(args)
+
+    assert confirm_calls == []

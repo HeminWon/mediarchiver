@@ -1,6 +1,8 @@
 import argparse
+import sys
 
 from mediarchiver.archive.cli import register_subparser as register_archive_subparser
+from mediarchiver.common.external import DependencyMissingError, format_missing_dependency_message
 from mediarchiver.rename.cli import register_subparser as register_rename_subparser
 
 
@@ -15,4 +17,8 @@ def build_parser():
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
-    return args.handler(args)
+    try:
+        return args.handler(args)
+    except DependencyMissingError as exc:
+        print(format_missing_dependency_message(exc.tool_name))
+        sys.exit(1)

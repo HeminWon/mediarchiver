@@ -7,6 +7,27 @@ from typing import Any, Optional
 DEFAULT_COMMAND_TIMEOUT = 15
 _COMMAND_AVAILABILITY_CACHE = {}
 
+_INSTALL_HINTS = {
+    "exiftool": (
+        "  macOS:   brew install exiftool\n"
+        "  Ubuntu:  sudo apt install libimage-exiftool-perl\n"
+        "  Windows: https://exiftool.org/install.html"
+    ),
+    "ffprobe": (
+        "  macOS:   brew install ffmpeg\n"
+        "  Ubuntu:  sudo apt install ffmpeg\n"
+        "  Windows: https://ffmpeg.org/download.html\n"
+        "  Note:    ffprobe is bundled with ffmpeg"
+    ),
+}
+
+
+def format_missing_dependency_message(tool_name):
+    hint = _INSTALL_HINTS.get(
+        tool_name, f"  Please install '{tool_name}' and ensure it is in PATH."
+    )
+    return f"Error: required tool '{tool_name}' is not installed or not in PATH.\n{hint}"
+
 
 class ExternalToolError(RuntimeError):
     def __init__(self, tool_name, message):

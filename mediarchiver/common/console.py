@@ -3,6 +3,16 @@ def _print_lines(lines):
         print(line)
 
 
+def confirm_proceed(prompt):
+    """Prompt for y/n confirmation. Returns True if user confirms, False otherwise."""
+    try:
+        answer = input(f"{prompt} [y/N]: ").strip().lower()
+        return answer in ("y", "yes")
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+
+
 def print_run_header(operation, values):
     lines = [f"[{operation}] start"]
     for key, value in values.items():
