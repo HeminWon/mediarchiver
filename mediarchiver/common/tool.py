@@ -110,7 +110,11 @@ def is_VID(filename):
 def is_live_photo_video_from_metadata(filename, metadata):
     if metadata is None:
         return False
-    live_photo_fields = ["LivePhotoVitalityScore", "LivePhotoVitalityScoringVersion", "ContentIdentifier"]
+    live_photo_fields = [
+        "LivePhotoVitalityScore",
+        "LivePhotoVitalityScoringVersion",
+        "ContentIdentifier",
+    ]
     if not any(metadata.get(f) is not None for f in live_photo_fields):
         return False
     _, e = os.path.splitext(filename)

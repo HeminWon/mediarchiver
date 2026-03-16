@@ -4,6 +4,7 @@ import os
 from tqdm import tqdm
 
 from mediarchiver.common.reporting import OperationLogger
+from mediarchiver.common.tool import FILE_EXT_LIST, is_sony_xml, sony_xml_video_stem
 from mediarchiver.common.workers import map_with_workers, resolve_worker_count
 from mediarchiver.rename.metadata import build_file_metadata_context, get_context_load_error
 from mediarchiver.rename.options import RenameOptions
@@ -16,7 +17,6 @@ from mediarchiver.rename.rules import (
     need_ignore_file,
     sony_xml_match_xmls,
 )
-from mediarchiver.common.tool import FILE_EXT_LIST, is_sony_xml, sony_xml_video_stem
 
 MAX_CONTEXT_PREFETCH_WORKERS = 4
 
@@ -52,7 +52,9 @@ def _is_prefetch_candidate(folder_path, obj):
     return True
 
 
-def _append_sidecar_plan_item(items, planned_destinations, planned_sources, source_path, destination_path):
+def _append_sidecar_plan_item(
+    items, planned_destinations, planned_sources, source_path, destination_path
+):
     """Append a sidecar file (XML / Live Photo MOV) plan item, handling conflicts.
 
     Records the source in *planned_sources* regardless of outcome so the main
@@ -75,7 +77,8 @@ def _append_sidecar_plan_item(items, planned_destinations, planned_sources, sour
 
     if os.path.exists(destination_path):
         logging.warning(
-            f"File already exists, can not rename {os.path.basename(source_path)} => {os.path.basename(destination_path)}"
+            f"File already exists, can not rename "
+            f"{os.path.basename(source_path)} => {os.path.basename(destination_path)}"
         )
         items.append(
             RenamePlanItem(

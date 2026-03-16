@@ -6,7 +6,13 @@ import pytest
 
 from mediarchiver.cli import build_parser as build_root_parser
 from mediarchiver.common.external import CommandLoadResult
-from mediarchiver.common.tool import is_IMG, is_VID, load_metadata_result, parse_time_offset, apply_time_offset_to_date
+from mediarchiver.common.tool import (
+    apply_time_offset_to_date,
+    is_IMG,
+    is_VID,
+    load_metadata_result,
+    parse_time_offset,
+)
 from mediarchiver.rename import (
     RenameOptions,
     apply_rename_plan,
@@ -21,7 +27,6 @@ from mediarchiver.rename.cli import validate_args
 from mediarchiver.rename.metadata import (
     FileMetadataContext,
     build_file_metadata_context,
-    get_video_metadata_ff,
     load_ffprobe_metadata_result,
 )
 from mediarchiver.rename.rules import (
@@ -989,7 +994,7 @@ def test_sony_xml_video_stem_returns_none_for_non_xml():
 
 
 def test_sony_xml_match_video_finds_paired_mp4(tmp_path):
-    from mediarchiver.rename.rules import sony_xml_match_xmls, _sony_xml_lookup_by_video_stem
+    from mediarchiver.rename.rules import _sony_xml_lookup_by_video_stem, sony_xml_match_xmls
     _sony_xml_lookup_by_video_stem.cache_clear()
     mp4 = tmp_path / "C0212.MP4"
     mp4.write_text("dummy")
@@ -1000,7 +1005,7 @@ def test_sony_xml_match_video_finds_paired_mp4(tmp_path):
 
 
 def test_sony_xml_match_video_returns_empty_when_no_xml(tmp_path):
-    from mediarchiver.rename.rules import sony_xml_match_xmls, _sony_xml_lookup_by_video_stem
+    from mediarchiver.rename.rules import _sony_xml_lookup_by_video_stem, sony_xml_match_xmls
     _sony_xml_lookup_by_video_stem.cache_clear()
     mp4 = tmp_path / "C0212.MP4"
     mp4.write_text("dummy")
@@ -1008,7 +1013,7 @@ def test_sony_xml_match_video_returns_empty_when_no_xml(tmp_path):
 
 
 def test_sony_xml_match_xmls_finds_multiple_sidecars(tmp_path):
-    from mediarchiver.rename.rules import sony_xml_match_xmls, _sony_xml_lookup_by_video_stem
+    from mediarchiver.rename.rules import _sony_xml_lookup_by_video_stem, sony_xml_match_xmls
     _sony_xml_lookup_by_video_stem.cache_clear()
     mp4 = tmp_path / "C0212.MP4"
     mp4.write_text("dummy")
@@ -1021,7 +1026,7 @@ def test_sony_xml_match_xmls_finds_multiple_sidecars(tmp_path):
 
 
 def test_sony_xml_match_xmls_works_with_formatted_video_name(tmp_path):
-    from mediarchiver.rename.rules import sony_xml_match_xmls, _sony_xml_lookup_by_video_stem
+    from mediarchiver.rename.rules import _sony_xml_lookup_by_video_stem, sony_xml_match_xmls
     _sony_xml_lookup_by_video_stem.cache_clear()
     mp4 = tmp_path / "20240101-120000_MSON-4K-25FPS-AVC_0212.MP4"
     mp4.write_text("dummy")
@@ -1047,7 +1052,7 @@ def test_need_ignore_file_keeps_unformatted_sony_xml(tmp_path):
 
 
 def test_live_photo_match_image_finds_paired_heic(tmp_path):
-    from mediarchiver.rename.rules import live_photo_match_image, _live_photo_image_lookup
+    from mediarchiver.rename.rules import _live_photo_image_lookup, live_photo_match_image
     _live_photo_image_lookup.cache_clear()
     img = tmp_path / "IMG_1234.HEIC"
     img.write_text("dummy")
@@ -1056,7 +1061,7 @@ def test_live_photo_match_image_finds_paired_heic(tmp_path):
 
 
 def test_live_photo_match_image_returns_none_when_missing(tmp_path):
-    from mediarchiver.rename.rules import live_photo_match_image, _live_photo_image_lookup
+    from mediarchiver.rename.rules import _live_photo_image_lookup, live_photo_match_image
     _live_photo_image_lookup.cache_clear()
     assert live_photo_match_image(str(tmp_path), "9999") is None
 
@@ -1065,7 +1070,7 @@ def test_live_photo_match_image_returns_none_when_missing(tmp_path):
 
 
 def test_live_photo_match_mov_finds_paired_mov(tmp_path):
-    from mediarchiver.rename.rules import live_photo_match_mov, _live_photo_mov_lookup
+    from mediarchiver.rename.rules import _live_photo_mov_lookup, live_photo_match_mov
     _live_photo_mov_lookup.cache_clear()
     mov = tmp_path / "IMG_1234.MOV"
     mov.write_text("dummy")
@@ -1074,7 +1079,7 @@ def test_live_photo_match_mov_finds_paired_mov(tmp_path):
 
 
 def test_live_photo_match_mov_returns_none_when_missing(tmp_path):
-    from mediarchiver.rename.rules import live_photo_match_mov, _live_photo_mov_lookup
+    from mediarchiver.rename.rules import _live_photo_mov_lookup, live_photo_match_mov
     _live_photo_mov_lookup.cache_clear()
     assert live_photo_match_mov(str(tmp_path), "9999") is None
 
@@ -1089,8 +1094,8 @@ def test_build_rename_plan_raises_for_nonexistent_source():
 
 
 def test_build_rename_plan_includes_xml_sidecar_for_video(tmp_path, monkeypatch):
-    from mediarchiver.rename.rules import _sony_xml_lookup_by_video_stem
     from mediarchiver.common.external import CommandLoadResult
+    from mediarchiver.rename.rules import _sony_xml_lookup_by_video_stem
     _sony_xml_lookup_by_video_stem.cache_clear()
 
     video_file = tmp_path / "C0212.MP4"
@@ -1135,8 +1140,8 @@ def test_build_rename_plan_includes_xml_sidecar_for_video(tmp_path, monkeypatch)
 
 def test_build_rename_plan_includes_xml_sidecar_for_already_formatted_video(tmp_path, monkeypatch):
     """--all mode: already-formatted video should still bring its XML sidecar into the plan."""
-    from mediarchiver.rename.rules import _sony_xml_lookup_by_video_stem
     from mediarchiver.common.external import CommandLoadResult
+    from mediarchiver.rename.rules import _sony_xml_lookup_by_video_stem
     _sony_xml_lookup_by_video_stem.cache_clear()
 
     formatted_name = "20240101-120000_MSON-4K-25FPS-AVC_0212.MP4"
@@ -1193,8 +1198,8 @@ def test_is_live_photo_video_from_metadata_returns_false_for_none_metadata():
 
 
 def test_build_rename_plan_includes_live_photo_mov_for_image(tmp_path, monkeypatch):
-    from mediarchiver.rename.rules import _live_photo_mov_lookup
     from mediarchiver.common.external import CommandLoadResult
+    from mediarchiver.rename.rules import _live_photo_mov_lookup
     _live_photo_mov_lookup.cache_clear()
 
     img_file = tmp_path / "IMG_1234.HEIC"
@@ -1247,11 +1252,19 @@ def test_operation_logger_writes_records_and_closes(tmp_path):
 
     logger = OperationLogger(str(tmp_path), "rename")
     logger.record("rename", "/src/a.jpg", destination="/dst/a.jpg", status="success")
-    logger.record("rename", "/src/b.jpg", destination="/dst/b.jpg", status="conflict", reason="destination_exists")
+    logger.record(
+        "rename",
+        "/src/b.jpg",
+        destination="/dst/b.jpg",
+        status="conflict",
+        reason="destination_exists",
+    )
     logger.close()
 
     ops = (tmp_path / "rename_operations.jsonl").read_text(encoding="utf-8").strip().splitlines()
-    conflicts = (tmp_path / "rename_conflicts.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    conflicts = (
+        (tmp_path / "rename_conflicts.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    )
 
     assert len(ops) == 2
     assert len(conflicts) == 1
@@ -1274,6 +1287,7 @@ def test_operation_logger_context_manager(tmp_path):
 
 def test_configure_logging_writes_to_given_dir(tmp_path):
     import logging
+
     from mediarchiver.common.logging_utils import configure_logging
 
     log_path = configure_logging(str(tmp_path), "test.log")

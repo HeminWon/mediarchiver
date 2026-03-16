@@ -3,7 +3,6 @@ import subprocess
 import pytest
 
 from mediarchiver.common.external import (
-    _COMMAND_AVAILABILITY_CACHE,
     DependencyMissingError,
     ExternalToolExecutionError,
     ExternalToolTimeoutError,

@@ -77,7 +77,7 @@ def _live_photo_mov_lookup(folder_path):
     from 'IMG_1234.MOV'). Only MOV files with Live Photo metadata are included;
     here we match by filename pattern and leave metadata check to the caller.
     """
-    pattern = re.compile(rf"(\d{{4}})\.mov$", re.IGNORECASE)
+    pattern = re.compile(r"(\d{4})\.mov$", re.IGNORECASE)
     lookup = {}
     for file_name in sorted(glob.glob(os.path.join(folder_path, "*"))):
         match = pattern.search(os.path.basename(file_name))

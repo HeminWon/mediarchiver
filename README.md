@@ -1,117 +1,112 @@
 # mediarchiver
 
-A tool for archiving and renaming media files using Exif metadata.
+A CLI tool for renaming and archiving media files using Exif metadata.
+
+## Requirements
+
+Before installing, make sure the following system tools are available:
+
+```bash
+# macOS
+brew install exiftool ffmpeg
+
+# Ubuntu / Debian
+sudo apt install libimage-exiftool-perl ffmpeg
+```
 
 ## Installation
 
-### pipx（推荐）
-
-从 GitHub 安装最新版本：
+Install the latest version directly from GitHub:
 
 ```bash
 pipx install "git+https://github.com/heminwon/mediarchiver.git"
 ```
 
-或安装指定版本：
+Install a specific version:
 
 ```bash
 pipx install "git+https://github.com/heminwon/mediarchiver.git@v0.1.0"
 ```
 
-> 安装前请确保系统已安装 `exiftool` 和 `ffmpeg`：
-> ```bash
-> brew install exiftool ffmpeg   # macOS
-> sudo apt install libimage-exiftool-perl ffmpeg   # Ubuntu/Debian
-> ```
-
-
-## Requirements（开发环境）
+Upgrade to the latest version:
 
 ```bash
-nix develop
+pipx upgrade mediarchiver
 ```
 
-The Nix shell provides `python`, `pytest`, `ruff`, `exiftool`, and `ffmpeg`.
+## Usage
 
-Create a local virtual environment inside the Nix shell (recommended):
+### Rename
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -U pip
-python3 -m pip install -e .
-```
-
-This prevents `pip` from trying to modify read-only packages in `/nix/store`.
-
-Quick setup (same steps, automated):
-
-```bash
-./scripts/bootstrap.sh
-source .venv/bin/activate
-```
-
-When to run setup again:
-
-- You updated `pyproject.toml` or `requirements.txt`
-- You recreated or deleted `.venv`
-- You changed `scripts/bootstrap.sh` and want to apply the new setup behavior
-
-## Run
-
-Install the package in editable mode if you want the `mediarchiver` command:
-
-```bash
-python3 -m pip install -e .
-```
-
-If you created `.venv`, activate it first:
-
-```bash
-source .venv/bin/activate
-```
-
-Then use the unified CLI:
+Preview rename plan (no files are modified):
 
 ```bash
 mediarchiver rename <source>
+```
+
+Apply renames:
+
+```bash
 mediarchiver rename <source> --apply
+```
+
+Dry run (execute all logic but skip actual file writes):
+
+```bash
 mediarchiver rename <source> --apply --dry-run
+```
+
+Include already-formatted files:
+
+```bash
 mediarchiver rename <source> --all
+```
+
+Control metadata read concurrency:
+
+```bash
 mediarchiver rename <source> --workers 2
+```
+
+Export rename operations as a shell script:
+
+```bash
 mediarchiver rename <source> --shell
+```
+
+Work with an existing plan file:
+
+```bash
 mediarchiver rename --plan rename-plan.json
 mediarchiver rename --plan rename-plan.json --apply
 mediarchiver rename --plan rename-plan.json --dry-run
 mediarchiver rename --plan rename-plan.json --shell
+```
+
+### Archive
+
+Move files into a year/quarter directory structure:
+
+```bash
 mediarchiver archive <source> --to <target>
 mediarchiver archive <source> --to <target> --dry-run
 mediarchiver archive <source> --to <target> --workers 2
-python -m mediarchiver rename <source>
 ```
 
-## Parallel Metadata Reads
+## Output Files
 
-- `--workers` controls only metadata prefetch concurrency for `exiftool` and `ffprobe`
-- File rename, file move, and report writes still run sequentially to avoid conflicts
-- Default behavior is automatic worker selection based on CPU count and candidate file count
-- Recommended values: use `2` for laptops or slow disks, `3-4` for larger local batches
-- Start with `--dry-run --workers 2` if you want to verify behavior before applying changes
+| File | Description |
+|---|---|
+| `rename.log` | Rename workflow log |
+| `archived.log` | Archive workflow log |
+| `rename-plan.json` | Rename plan written into the source directory |
+| `rename.sh` | Optional shell script export |
+| `rename_operations.jsonl` | Structured rename operation records |
+| `rename_conflicts.jsonl` | Rename conflict records |
+| `archive_operations.jsonl` | Structured archive operation records |
+| `archive_conflicts.jsonl` | Archive conflict records |
 
-## Test
+## Documentation
 
-```bash
-python -m pytest
-ruff check .
-```
-
-## Outputs
-
-- `rename.log`: rename workflow log
-- `archived.log`: archive workflow log
-- `rename-plan.json`: default rename plan output written into the source directory
-- `rename.sh`: optional shell export generated next to the source directory or plan file
-- `rename_operations.jsonl`: structured rename operation report
-- `rename_conflicts.jsonl`: rename conflict report
-- `archive_operations.jsonl`: structured archive operation report
-- `archive_conflicts.jsonl`: archive conflict report
+- [Basic Functionality](docs/basic-functionality.md)
+- [Development Guide](docs/development.md)
