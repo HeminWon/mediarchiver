@@ -9,7 +9,6 @@ from functools import lru_cache
 from mediarchiver.common.tool import (
     FILE_EXT_LIST,
     IMAGE_EXT_LIST,
-    VIDEO_EXT_LIST,
     apply_time_offset_to_date,
     is_sony_xml,
     sony_xml_video_stem,
@@ -57,7 +56,7 @@ def clear_md5_cache():
 def is_formatted_file_name(filename):
     if filename is None:
         return False
-    return re.match(r"^\d{8}-\d{6}_([a-zA-Z0-9.-]+_)?\d{4}\.[a-zA-Z0-9]+$", filename) is not None
+    return bool(re.match(r"^\d{8}-\d{6}_.*_\d{4}", filename))
 
 
 def contains_keywords(text, keywords):
@@ -71,26 +70,55 @@ def live_photo_match_image(folder_path, filter_num):
 
 
 @lru_cache(maxsize=None)
-def _sony_xml_video_lookup(folder_path):
-    """Build a stem -> video_file_path lookup for SONY XML pairing."""
-    pattern = re.compile(
-        r"^(.+)\.(" + "|".join(VIDEO_EXT_LIST) + r")$", re.IGNORECASE
-    )
+def _live_photo_mov_lookup(folder_path):
+    """Build a 4-digit-num -> mov_file_path lookup for Live Photo pairing.
+
+    Key is the 4-digit number extracted from the MOV filename (e.g. '1234'
+    from 'IMG_1234.MOV'). Only MOV files with Live Photo metadata are included;
+    here we match by filename pattern and leave metadata check to the caller.
+    """
+    pattern = re.compile(rf"(\d{{4}})\.mov$", re.IGNORECASE)
     lookup = {}
     for file_name in sorted(glob.glob(os.path.join(folder_path, "*"))):
         match = pattern.search(os.path.basename(file_name))
         if match is None:
             continue
-        lookup.setdefault(match.group(1).upper(), file_name)
+        lookup.setdefault(match.group(1), file_name)
     return lookup
 
 
-def sony_xml_match_video(folder_path, xml_file):
-    result = sony_xml_video_stem(xml_file)
-    if result is None:
-        return None
-    stem, _ = result
-    return _sony_xml_video_lookup(folder_path).get(stem.upper())
+def live_photo_match_mov(folder_path, filter_num):
+    """Return the Live Photo MOV path whose 4-digit number matches *filter_num*."""
+    return _live_photo_mov_lookup(folder_path).get(filter_num)
+
+
+@lru_cache(maxsize=None)
+def _sony_xml_lookup_by_video_stem(folder_path):
+    """Build a video_stem -> [xml_file_path, ...] lookup for SONY XML pairing.
+
+    Key is the video file stem (uppercased). Each video may have multiple XML
+    sidecar files (M01, M02, …), so the value is a list.
+    """
+    lookup = {}
+    for file_name in sorted(glob.glob(os.path.join(folder_path, "*"))):
+        base = os.path.basename(file_name)
+        result = sony_xml_video_stem(base)
+        if result is None:
+            continue
+        video_stem, _ = result
+        lookup.setdefault(video_stem.upper(), []).append(file_name)
+    return lookup
+
+
+def sony_xml_match_xmls(folder_path, video_file):
+    """Return list of SONY XML sidecar paths that pair with *video_file*.
+
+    Matching is done by video stem so it works for both original filenames
+    (e.g. C0212.MP4 → C0212M01.XML) and already-formatted names
+    (e.g. 20240101-120000_…_0212.MP4 → 20240101-120000_…_0212M01.XML).
+    """
+    video_stem = os.path.splitext(os.path.basename(video_file))[0]
+    return _sony_xml_lookup_by_video_stem(folder_path).get(video_stem.upper(), [])
 
 
 @lru_cache(maxsize=None)
@@ -284,8 +312,6 @@ def tag_ff_encoder(metadata):
 def formatted_tags(filename, options=None):
     options = options or RenameOptions()
     context = ensure_file_context(filename)
-    if context.is_live_photo_video:
-        raise ValueError(f"livephoto rename failure: {context.file_path}")
     if context.is_image:
         return formatted_tags_img(context)
     if context.is_video:
@@ -362,16 +388,21 @@ def formatted_date(date):
     return str(matches.group()).replace(":", "").replace(" ", "-") if matches else None
 
 
-def need_ignore_file(folder_path, obj, options=None):
+def need_ignore_file(folder_path, obj, options=None, context=None):
     options = options or RenameOptions()
     file_path = os.path.join(folder_path, obj)
     if os.path.isdir(file_path):
         return True
     if is_sony_xml(obj):
-        return False
-    _, ext = os.path.splitext(obj)
-    if ext[1:].lower() not in FILE_EXT_LIST:
         return True
+    _, ext = os.path.splitext(obj)
+    ext_lower = ext[1:].lower()
+    if ext_lower not in FILE_EXT_LIST:
+        return True
+    if ext_lower == "mov":
+        ctx = context if context is not None else build_file_metadata_context(file_path)
+        if ctx.is_live_photo_video:
+            return True
     if options.include_formatted is False and is_formatted_file_name(obj):
         return True
     return False
@@ -418,7 +449,7 @@ def generate_new_filename_prefix(folder_path, obj=None, options=None):
     return "_".join(items)
 
 
-def generate_new_filename(folder_path, obj=None, options=None, context_provider=None):
+def generate_new_filename(folder_path, obj=None, options=None):
     options = options or RenameOptions()
     if isinstance(folder_path, FileMetadataContext):
         context = folder_path
@@ -428,28 +459,5 @@ def generate_new_filename(folder_path, obj=None, options=None, context_provider=
             raise ValueError("obj is required when folder_path is not a FileMetadataContext")
         context = build_file_metadata_context(os.path.join(folder_path, obj))
     ext = context.extension
-    if context.is_live_photo_video:
-        live_photo_num = file_number(context.file_path)
-        if live_photo_num is None:
-            logging.error(f"livephoto number is error, file: {obj}")
-            return None
-        target_file = live_photo_match_image(os.path.dirname(context.file_path), live_photo_num)
-        if target_file is None:
-            logging.error(f"livephoto not found match image, file: {obj}")
-            return None
-        provider = context_provider or build_file_metadata_context
-        target_prefix = generate_new_filename_prefix(provider(target_file), options=options)
-        return target_prefix + ext if target_prefix is not None else None
-    if is_sony_xml(context.file_path):
-        target_video = sony_xml_match_video(os.path.dirname(context.file_path), context.file_name)
-        if target_video is None:
-            logging.error(f"sony xml not found match video, file: {obj}")
-            return None
-        provider = context_provider or build_file_metadata_context
-        target_prefix = generate_new_filename_prefix(provider(target_video), options=options)
-        if target_prefix is None:
-            return None
-        _, suffix = sony_xml_video_stem(context.file_name)
-        return target_prefix + suffix
     prefix = generate_new_filename_prefix(context, options=options)
     return prefix + ext if prefix is not None else None

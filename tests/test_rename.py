@@ -1,4 +1,5 @@
 import json
+import os
 from builtins import open as builtin_open
 
 import pytest
@@ -123,14 +124,14 @@ def test_parser_rejects_dry_run_without_apply_or_plan():
 
 
 def test_need_ignore_file_skips_formatted_name_by_default(tmp_path):
-    file_path = tmp_path / "20230226-090511_2348.HEIC"
+    file_path = tmp_path / "20230226-090511_MiPh_2348.HEIC"
     file_path.write_text("demo", encoding="utf-8")
     options = RenameOptions()
     assert need_ignore_file(str(tmp_path), file_path.name, options) is True
 
 
 def test_need_ignore_file_keeps_formatted_name_when_enabled(tmp_path):
-    file_path = tmp_path / "20230226-090511_2348.HEIC"
+    file_path = tmp_path / "20230226-090511_MiPh_2348.HEIC"
     file_path.write_text("demo", encoding="utf-8")
     options = RenameOptions(include_formatted=True)
     assert need_ignore_file(str(tmp_path), file_path.name, options) is False
@@ -984,24 +985,62 @@ def test_sony_xml_video_stem_returns_none_for_non_xml():
     assert sony_xml_video_stem("C0212.MP4") is None
 
 
-# --- sony_xml_match_video ---
+# --- sony_xml_match_xmls ---
 
 
 def test_sony_xml_match_video_finds_paired_mp4(tmp_path):
-    from mediarchiver.rename.rules import sony_xml_match_video
+    from mediarchiver.rename.rules import sony_xml_match_xmls, _sony_xml_lookup_by_video_stem
+    _sony_xml_lookup_by_video_stem.cache_clear()
     mp4 = tmp_path / "C0212.MP4"
     mp4.write_text("dummy")
     xml = tmp_path / "C0212M01.XML"
     xml.write_text("<xml/>")
-    result = sony_xml_match_video(str(tmp_path), "C0212M01.XML")
-    assert result == str(mp4)
+    result = sony_xml_match_xmls(str(tmp_path), str(mp4))
+    assert result == [str(xml)]
 
 
-def test_sony_xml_match_video_returns_none_when_no_video(tmp_path):
-    from mediarchiver.rename.rules import sony_xml_match_video
-    xml = tmp_path / "C0212M01.XML"
+def test_sony_xml_match_video_returns_empty_when_no_xml(tmp_path):
+    from mediarchiver.rename.rules import sony_xml_match_xmls, _sony_xml_lookup_by_video_stem
+    _sony_xml_lookup_by_video_stem.cache_clear()
+    mp4 = tmp_path / "C0212.MP4"
+    mp4.write_text("dummy")
+    assert sony_xml_match_xmls(str(tmp_path), str(mp4)) == []
+
+
+def test_sony_xml_match_xmls_finds_multiple_sidecars(tmp_path):
+    from mediarchiver.rename.rules import sony_xml_match_xmls, _sony_xml_lookup_by_video_stem
+    _sony_xml_lookup_by_video_stem.cache_clear()
+    mp4 = tmp_path / "C0212.MP4"
+    mp4.write_text("dummy")
+    xml1 = tmp_path / "C0212M01.XML"
+    xml1.write_text("<xml/>")
+    xml2 = tmp_path / "C0212M02.XML"
+    xml2.write_text("<xml/>")
+    result = sony_xml_match_xmls(str(tmp_path), str(mp4))
+    assert sorted(result) == sorted([str(xml1), str(xml2)])
+
+
+def test_sony_xml_match_xmls_works_with_formatted_video_name(tmp_path):
+    from mediarchiver.rename.rules import sony_xml_match_xmls, _sony_xml_lookup_by_video_stem
+    _sony_xml_lookup_by_video_stem.cache_clear()
+    mp4 = tmp_path / "20240101-120000_MSON-4K-25FPS-AVC_0212.MP4"
+    mp4.write_text("dummy")
+    xml = tmp_path / "20240101-120000_MSON-4K-25FPS-AVC_0212M01.XML"
     xml.write_text("<xml/>")
-    assert sony_xml_match_video(str(tmp_path), "C0212M01.XML") is None
+    result = sony_xml_match_xmls(str(tmp_path), str(mp4))
+    assert result == [str(xml)]
+
+
+def test_need_ignore_file_ignores_already_formatted_sony_xml(tmp_path):
+    f = tmp_path / "20260307-024740_MSON-4K-25FPS-AVC_0212M01.XML"
+    f.write_text("<xml/>")
+    assert need_ignore_file(str(tmp_path), f.name) is True
+
+
+def test_need_ignore_file_keeps_unformatted_sony_xml(tmp_path):
+    f = tmp_path / "C0212M01.XML"
+    f.write_text("<xml/>")
+    assert need_ignore_file(str(tmp_path), f.name) is True
 
 
 # --- live_photo_match_image ---
@@ -1022,6 +1061,24 @@ def test_live_photo_match_image_returns_none_when_missing(tmp_path):
     assert live_photo_match_image(str(tmp_path), "9999") is None
 
 
+# --- live_photo_match_mov ---
+
+
+def test_live_photo_match_mov_finds_paired_mov(tmp_path):
+    from mediarchiver.rename.rules import live_photo_match_mov, _live_photo_mov_lookup
+    _live_photo_mov_lookup.cache_clear()
+    mov = tmp_path / "IMG_1234.MOV"
+    mov.write_text("dummy")
+    result = live_photo_match_mov(str(tmp_path), "1234")
+    assert result == str(mov)
+
+
+def test_live_photo_match_mov_returns_none_when_missing(tmp_path):
+    from mediarchiver.rename.rules import live_photo_match_mov, _live_photo_mov_lookup
+    _live_photo_mov_lookup.cache_clear()
+    assert live_photo_match_mov(str(tmp_path), "9999") is None
+
+
 # --- build_rename_plan directory guards ---
 
 
@@ -1029,6 +1086,51 @@ def test_build_rename_plan_raises_for_nonexistent_source():
     from mediarchiver.rename.service import build_rename_plan
     with pytest.raises(ValueError, match="does not exist"):
         build_rename_plan("/nonexistent/path/xyz")
+
+
+def test_build_rename_plan_includes_xml_sidecar_for_video(tmp_path, monkeypatch):
+    from mediarchiver.rename.rules import _sony_xml_lookup_by_video_stem
+    from mediarchiver.common.external import CommandLoadResult
+    _sony_xml_lookup_by_video_stem.cache_clear()
+
+    video_file = tmp_path / "C0212.MP4"
+    video_file.write_text("dummy")
+    xml_file = tmp_path / "C0212M01.XML"
+    xml_file.write_text("<xml/>")
+
+    def fake_context(file_path):
+        return FileMetadataContext(
+            file_path=file_path,
+            exif_result=CommandLoadResult(
+                tool_name="exiftool",
+                data={"DateTimeOriginal": "2024:01:01 12:00:00", "Make": "SONY"},
+            ),
+            ffprobe_result=CommandLoadResult(tool_name="ffprobe", data={}),
+            exif_metadata={"DateTimeOriginal": "2024:01:01 12:00:00", "Make": "SONY"},
+            ffprobe_metadata={},
+            media_date="2024:01:01 12:00:00",
+            is_image=False,
+            is_video=True,
+            is_live_photo_video=False,
+        )
+
+    monkeypatch.setattr("mediarchiver.rename.service.build_file_metadata_context", fake_context)
+    monkeypatch.setattr(
+        "mediarchiver.rename.service.generate_new_filename",
+        lambda *_args, **_kwargs: "20240101-120000_MSON-4K-25FPS-AVC_0212.MP4",
+    )
+
+    plan = build_rename_plan(str(tmp_path), RenameOptions())
+
+    sources = {item.source for item in plan.items}
+    destinations = {item.destination for item in plan.items if item.destination}
+    ready_items = [item for item in plan.items if item.status == "ready"]
+    xml_items = [item for item in plan.items if item.source == str(xml_file)]
+
+    assert str(xml_file) in sources
+    assert str(tmp_path / "20240101-120000_MSON-4K-25FPS-AVC_0212M01.XML") in destinations
+    assert len(ready_items) == 2
+    assert len(xml_items) == 1, "XML should appear exactly once in the plan"
 
 
 # --- is_live_photo_video_from_metadata returns bool ---
@@ -1039,3 +1141,53 @@ def test_is_live_photo_video_from_metadata_returns_false_for_none_metadata():
     result = is_live_photo_video_from_metadata("clip.mov", None)
     assert result is False
     assert isinstance(result, bool)
+
+
+# --- build_rename_plan Live Photo MOV pairing ---
+
+
+def test_build_rename_plan_includes_live_photo_mov_for_image(tmp_path, monkeypatch):
+    from mediarchiver.rename.rules import _live_photo_mov_lookup
+    from mediarchiver.common.external import CommandLoadResult
+    _live_photo_mov_lookup.cache_clear()
+
+    img_file = tmp_path / "IMG_1234.HEIC"
+    img_file.write_text("dummy")
+    mov_file = tmp_path / "IMG_1234.MOV"
+    mov_file.write_text("dummy")
+
+    def fake_context(file_path):
+        name = os.path.basename(file_path)
+        is_mov = name.upper().endswith(".MOV")
+        return FileMetadataContext(
+            file_path=file_path,
+            exif_result=CommandLoadResult(
+                tool_name="exiftool",
+                data={"DateTimeOriginal": "2024:01:01 12:00:00", "Make": "Apple"},
+            ),
+            ffprobe_result=None,
+            exif_metadata={"DateTimeOriginal": "2024:01:01 12:00:00", "Make": "Apple"},
+            ffprobe_metadata=None,
+            media_date="2024:01:01 12:00:00",
+            is_image=not is_mov,
+            is_video=False,
+            is_live_photo_video=is_mov,
+        )
+
+    monkeypatch.setattr("mediarchiver.rename.service.build_file_metadata_context", fake_context)
+    monkeypatch.setattr(
+        "mediarchiver.rename.service.generate_new_filename",
+        lambda *_args, **_kwargs: "20240101-120000_MiPh_1234.HEIC",
+    )
+
+    plan = build_rename_plan(str(tmp_path), RenameOptions())
+
+    sources = {item.source for item in plan.items}
+    destinations = {item.destination for item in plan.items if item.destination}
+    ready_items = [item for item in plan.items if item.status == "ready"]
+    mov_items = [item for item in plan.items if item.source == str(mov_file)]
+
+    assert str(mov_file) in sources
+    assert str(tmp_path / "20240101-120000_MiPh_1234.MOV") in destinations
+    assert len(ready_items) == 2
+    assert len(mov_items) == 1, "Live photo MOV should appear exactly once in the plan"
