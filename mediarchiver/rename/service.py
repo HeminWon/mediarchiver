@@ -52,6 +52,78 @@ def _is_prefetch_candidate(folder_path, obj):
     return True
 
 
+def _append_sidecar_plan_item(items, planned_destinations, planned_sources, source_path, destination_path):
+    """Append a sidecar file (XML / Live Photo MOV) plan item, handling conflicts.
+
+    Records the source in *planned_sources* regardless of outcome so the main
+    loop skips it when iterating over the directory listing.
+    Returns True if the item was appended as ready, False otherwise.
+    """
+    planned_sources.add(source_path)
+
+    if source_path == destination_path:
+        items.append(
+            RenamePlanItem(
+                source=source_path,
+                destination=destination_path,
+                action="rename",
+                status="skipped",
+                reason="already_formatted",
+            )
+        )
+        return False
+
+    if os.path.exists(destination_path):
+        logging.warning(
+            f"File already exists, can not rename {os.path.basename(source_path)} => {os.path.basename(destination_path)}"
+        )
+        items.append(
+            RenamePlanItem(
+                source=source_path,
+                destination=destination_path,
+                action="rename",
+                status="conflict",
+                reason="destination_exists",
+            )
+        )
+        return False
+
+    existing_index = planned_destinations.get(destination_path)
+    if existing_index is not None:
+        existing_item = items[existing_index]
+        if existing_item.status == "ready":
+            items[existing_index] = RenamePlanItem(
+                source=existing_item.source,
+                destination=existing_item.destination,
+                action=existing_item.action,
+                status="conflict",
+                reason="destination_duplicated_in_plan",
+                details={**existing_item.details, "duplicate_with": source_path},
+            )
+        items.append(
+            RenamePlanItem(
+                source=source_path,
+                destination=destination_path,
+                action="rename",
+                status="conflict",
+                reason="destination_duplicated_in_plan",
+                details={"duplicate_with": existing_item.source},
+            )
+        )
+        return False
+
+    items.append(
+        RenamePlanItem(
+            source=source_path,
+            destination=destination_path,
+            action="rename",
+            status="ready",
+        )
+    )
+    planned_destinations[destination_path] = len(items) - 1
+    return True
+
+
 def build_rename_plan(source, options=None, workers=None):
     options = options or RenameOptions()
     source_dir = os.path.abspath(source)
@@ -148,7 +220,19 @@ def build_rename_plan(source, options=None, workers=None):
                 continue
 
             new_file_path = os.path.join(source_dir, new_file_name)
-            if os.path.exists(new_file_path):
+            if new_file_path == file_path:
+                # Source and destination are the same: file is already correctly
+                # named. Mark as skipped but still process its sidecars below.
+                items.append(
+                    RenamePlanItem(
+                        source=file_path,
+                        destination=new_file_path,
+                        action="rename",
+                        status="skipped",
+                        reason="already_formatted",
+                    )
+                )
+            elif os.path.exists(new_file_path):
                 logging.warning(f"File already exists, can not rename {obj} => {new_file_name}")
                 items.append(
                     RenamePlanItem(
@@ -160,102 +244,52 @@ def build_rename_plan(source, options=None, workers=None):
                     )
                 )
                 continue
-
-            existing_index = planned_destinations.get(new_file_path)
-            if existing_index is not None:
-                existing_item = items[existing_index]
-                if existing_item.status == "ready":
-                    items[existing_index] = RenamePlanItem(
-                        source=existing_item.source,
-                        destination=existing_item.destination,
-                        action=existing_item.action,
-                        status="conflict",
-                        reason="destination_duplicated_in_plan",
-                        details={
-                            **existing_item.details,
-                            "duplicate_with": file_path,
-                        },
+            else:
+                existing_index = planned_destinations.get(new_file_path)
+                if existing_index is not None:
+                    existing_item = items[existing_index]
+                    if existing_item.status == "ready":
+                        items[existing_index] = RenamePlanItem(
+                            source=existing_item.source,
+                            destination=existing_item.destination,
+                            action=existing_item.action,
+                            status="conflict",
+                            reason="destination_duplicated_in_plan",
+                            details={
+                                **existing_item.details,
+                                "duplicate_with": file_path,
+                            },
+                        )
+                    items.append(
+                        RenamePlanItem(
+                            source=file_path,
+                            destination=new_file_path,
+                            action="rename",
+                            status="conflict",
+                            reason="destination_duplicated_in_plan",
+                            details={"duplicate_with": existing_item.source},
+                        )
                     )
+                    continue
+
                 items.append(
                     RenamePlanItem(
                         source=file_path,
                         destination=new_file_path,
                         action="rename",
-                        status="conflict",
-                        reason="destination_duplicated_in_plan",
-                        details={"duplicate_with": existing_item.source},
+                        status="ready",
                     )
                 )
-                continue
-
-            items.append(
-                RenamePlanItem(
-                    source=file_path,
-                    destination=new_file_path,
-                    action="rename",
-                    status="ready",
-                )
-            )
-            planned_destinations[new_file_path] = len(items) - 1
+                planned_destinations[new_file_path] = len(items) - 1
 
             if file_context.is_video:
                 new_file_name_stem = os.path.splitext(new_file_name)[0]
                 for xml_path in sony_xml_match_xmls(source_dir, file_path):
                     _, xml_suffix = sony_xml_video_stem(os.path.basename(xml_path))
-                    new_xml_name = new_file_name_stem + xml_suffix
-                    new_xml_path = os.path.join(source_dir, new_xml_name)
-                    if os.path.exists(new_xml_path):
-                        logging.warning(
-                            f"File already exists, can not rename {os.path.basename(xml_path)} => {new_xml_name}"
-                        )
-                        items.append(
-                            RenamePlanItem(
-                                source=xml_path,
-                                destination=new_xml_path,
-                                action="rename",
-                                status="conflict",
-                                reason="destination_exists",
-                            )
-                        )
-                        planned_sources.add(xml_path)
-                        continue
-                    existing_xml_index = planned_destinations.get(new_xml_path)
-                    if existing_xml_index is not None:
-                        existing_xml_item = items[existing_xml_index]
-                        if existing_xml_item.status == "ready":
-                            items[existing_xml_index] = RenamePlanItem(
-                                source=existing_xml_item.source,
-                                destination=existing_xml_item.destination,
-                                action=existing_xml_item.action,
-                                status="conflict",
-                                reason="destination_duplicated_in_plan",
-                                details={
-                                    **existing_xml_item.details,
-                                    "duplicate_with": xml_path,
-                                },
-                            )
-                        items.append(
-                            RenamePlanItem(
-                                source=xml_path,
-                                destination=new_xml_path,
-                                action="rename",
-                                status="conflict",
-                                reason="destination_duplicated_in_plan",
-                                details={"duplicate_with": existing_xml_item.source},
-                            )
-                        )
-                        planned_sources.add(xml_path)
-                        continue
-                    items.append(
-                        RenamePlanItem(
-                            source=xml_path,
-                            destination=new_xml_path,
-                            action="rename",
-                            status="ready",
-                        )
+                    new_xml_path = os.path.join(source_dir, new_file_name_stem + xml_suffix)
+                    _append_sidecar_plan_item(
+                        items, planned_destinations, planned_sources, xml_path, new_xml_path
                     )
-                    planned_destinations[new_xml_path] = len(items) - 1
-                    planned_sources.add(xml_path)
 
             if file_context.is_image:
                 new_file_name_stem = os.path.splitext(new_file_name)[0]
@@ -263,60 +297,13 @@ def build_rename_plan(source, options=None, workers=None):
                 if img_num is not None:
                     mov_path = live_photo_match_mov(source_dir, img_num)
                     if mov_path is not None:
-                        new_mov_name = new_file_name_stem + os.path.splitext(mov_path)[1]
-                        new_mov_path = os.path.join(source_dir, new_mov_name)
-                        if os.path.exists(new_mov_path):
-                            logging.warning(
-                                f"File already exists, can not rename {os.path.basename(mov_path)} => {new_mov_name}"
-                            )
-                            items.append(
-                                RenamePlanItem(
-                                    source=mov_path,
-                                    destination=new_mov_path,
-                                    action="rename",
-                                    status="conflict",
-                                    reason="destination_exists",
-                                )
-                            )
-                            planned_sources.add(mov_path)
-                        else:
-                            existing_mov_index = planned_destinations.get(new_mov_path)
-                            if existing_mov_index is not None:
-                                existing_mov_item = items[existing_mov_index]
-                                if existing_mov_item.status == "ready":
-                                    items[existing_mov_index] = RenamePlanItem(
-                                        source=existing_mov_item.source,
-                                        destination=existing_mov_item.destination,
-                                        action=existing_mov_item.action,
-                                        status="conflict",
-                                        reason="destination_duplicated_in_plan",
-                                        details={
-                                            **existing_mov_item.details,
-                                            "duplicate_with": mov_path,
-                                        },
-                                    )
-                                items.append(
-                                    RenamePlanItem(
-                                        source=mov_path,
-                                        destination=new_mov_path,
-                                        action="rename",
-                                        status="conflict",
-                                        reason="destination_duplicated_in_plan",
-                                        details={"duplicate_with": existing_mov_item.source},
-                                    )
-                                )
-                                planned_sources.add(mov_path)
-                            else:
-                                items.append(
-                                    RenamePlanItem(
-                                        source=mov_path,
-                                        destination=new_mov_path,
-                                        action="rename",
-                                        status="ready",
-                                    )
-                                )
-                                planned_destinations[new_mov_path] = len(items) - 1
-                                planned_sources.add(mov_path)
+                        new_mov_path = os.path.join(
+                            source_dir,
+                            new_file_name_stem + os.path.splitext(mov_path)[1],
+                        )
+                        _append_sidecar_plan_item(
+                            items, planned_destinations, planned_sources, mov_path, new_mov_path
+                        )
         except Exception as exc:
             logging.exception("build rename plan failed: %s", file_path)
             items.append(

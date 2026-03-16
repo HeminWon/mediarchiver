@@ -35,6 +35,23 @@ class OperationLogger:
         self.operation_file = self.report_dir / f"{operation_name}_operations.jsonl"
         self.conflict_file = self.report_dir / f"{operation_name}_conflicts.jsonl"
         self.summary = OperationSummary()
+        self._operation_fh = self.operation_file.open("a", encoding="utf-8")
+        self._conflict_fh = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+        return False
+
+    def close(self):
+        if self._operation_fh is not None:
+            self._operation_fh.close()
+            self._operation_fh = None
+        if self._conflict_fh is not None:
+            self._conflict_fh.close()
+            self._conflict_fh = None
 
     def record(
         self,
@@ -54,12 +71,15 @@ class OperationLogger:
             "reason": reason,
             "details": details or {},
         }
-        self._append_json_line(self.operation_file, payload)
+        self._write_json_line(self._operation_fh, payload)
         self.summary.add(status, reason)
         if status == "conflict":
-            self._append_json_line(self.conflict_file, payload)
+            if self._conflict_fh is None:
+                self._conflict_fh = self.conflict_file.open("a", encoding="utf-8")
+            self._write_json_line(self._conflict_fh, payload)
 
-    def _append_json_line(self, path, payload):
-        with path.open("a", encoding="utf-8") as file_obj:
-            file_obj.write(json.dumps(payload, ensure_ascii=True, sort_keys=True))
-            file_obj.write("\n")
+    @staticmethod
+    def _write_json_line(fh, payload):
+        fh.write(json.dumps(payload, ensure_ascii=True, sort_keys=True))
+        fh.write("\n")
+        fh.flush()

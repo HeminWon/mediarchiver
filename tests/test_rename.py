@@ -1133,6 +1133,52 @@ def test_build_rename_plan_includes_xml_sidecar_for_video(tmp_path, monkeypatch)
     assert len(xml_items) == 1, "XML should appear exactly once in the plan"
 
 
+def test_build_rename_plan_includes_xml_sidecar_for_already_formatted_video(tmp_path, monkeypatch):
+    """--all mode: already-formatted video should still bring its XML sidecar into the plan."""
+    from mediarchiver.rename.rules import _sony_xml_lookup_by_video_stem
+    from mediarchiver.common.external import CommandLoadResult
+    _sony_xml_lookup_by_video_stem.cache_clear()
+
+    formatted_name = "20240101-120000_MSON-4K-25FPS-AVC_0212.MP4"
+    video_file = tmp_path / formatted_name
+    video_file.write_text("dummy")
+    xml_file = tmp_path / "20240101-120000_MSON-4K-25FPS-AVC_0212M01.XML"
+    xml_file.write_text("<xml/>")
+
+    def fake_context(file_path):
+        return FileMetadataContext(
+            file_path=file_path,
+            exif_result=CommandLoadResult(
+                tool_name="exiftool",
+                data={"DateTimeOriginal": "2024:01:01 12:00:00", "Make": "SONY"},
+            ),
+            ffprobe_result=CommandLoadResult(tool_name="ffprobe", data={}),
+            exif_metadata={"DateTimeOriginal": "2024:01:01 12:00:00", "Make": "SONY"},
+            ffprobe_metadata={},
+            media_date="2024:01:01 12:00:00",
+            is_image=False,
+            is_video=True,
+            is_live_photo_video=False,
+        )
+
+    monkeypatch.setattr("mediarchiver.rename.service.build_file_metadata_context", fake_context)
+    monkeypatch.setattr(
+        "mediarchiver.rename.service.generate_new_filename",
+        lambda *_args, **_kwargs: formatted_name,
+    )
+
+    plan = build_rename_plan(str(tmp_path), RenameOptions(include_formatted=True))
+
+    xml_items = [item for item in plan.items if item.source == str(xml_file)]
+    assert len(xml_items) == 1, "XML should appear exactly once in the plan"
+    assert xml_items[0].status == "skipped"
+    assert xml_items[0].reason == "already_formatted"
+    video_items = [item for item in plan.items if item.source == str(video_file)]
+    assert len(video_items) == 1
+    assert video_items[0].status == "skipped"
+    assert video_items[0].reason == "already_formatted"
+
+
 # --- is_live_photo_video_from_metadata returns bool ---
 
 
@@ -1191,3 +1237,47 @@ def test_build_rename_plan_includes_live_photo_mov_for_image(tmp_path, monkeypat
     assert str(tmp_path / "20240101-120000_MiPh_1234.MOV") in destinations
     assert len(ready_items) == 2
     assert len(mov_items) == 1, "Live photo MOV should appear exactly once in the plan"
+
+
+# --- OperationLogger persistent file handle ---
+
+
+def test_operation_logger_writes_records_and_closes(tmp_path):
+    from mediarchiver.common.reporting import OperationLogger
+
+    logger = OperationLogger(str(tmp_path), "rename")
+    logger.record("rename", "/src/a.jpg", destination="/dst/a.jpg", status="success")
+    logger.record("rename", "/src/b.jpg", destination="/dst/b.jpg", status="conflict", reason="destination_exists")
+    logger.close()
+
+    ops = (tmp_path / "rename_operations.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    conflicts = (tmp_path / "rename_conflicts.jsonl").read_text(encoding="utf-8").strip().splitlines()
+
+    assert len(ops) == 2
+    assert len(conflicts) == 1
+    assert logger.summary.as_dict()["success"] == 1
+    assert logger.summary.as_dict()["conflict"] == 1
+
+
+def test_operation_logger_context_manager(tmp_path):
+    from mediarchiver.common.reporting import OperationLogger
+
+    with OperationLogger(str(tmp_path), "rename") as logger:
+        logger.record("rename", "/src/a.jpg", status="success")
+
+    ops = (tmp_path / "rename_operations.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    assert len(ops) == 1
+
+
+# --- configure_logging writes to source dir ---
+
+
+def test_configure_logging_writes_to_given_dir(tmp_path):
+    import logging
+    from mediarchiver.common.logging_utils import configure_logging
+
+    log_path = configure_logging(str(tmp_path), "test.log")
+
+    assert log_path == str(tmp_path / "test.log")
+    logging.info("hello from test")
+    assert (tmp_path / "test.log").exists()

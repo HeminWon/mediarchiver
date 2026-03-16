@@ -82,6 +82,10 @@ def preflight_check_commands(command_names):
         ensure_command_available(command_name)
 
 
+def clear_command_availability_cache():
+    _COMMAND_AVAILABILITY_CACHE.clear()
+
+
 def run_json_command(cmd, tool_name, timeout=DEFAULT_COMMAND_TIMEOUT):
     ensure_command_available(tool_name)
     try:

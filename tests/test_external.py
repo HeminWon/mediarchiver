@@ -7,13 +7,14 @@ from mediarchiver.common.external import (
     DependencyMissingError,
     ExternalToolExecutionError,
     ExternalToolTimeoutError,
+    clear_command_availability_cache,
     ensure_command_available,
     run_json_command,
 )
 
 
 def test_run_json_command_raises_dependency_missing(monkeypatch):
-    _COMMAND_AVAILABILITY_CACHE.clear()
+    clear_command_availability_cache()
     monkeypatch.setattr("mediarchiver.common.external.shutil.which", lambda _name: None)
 
     with pytest.raises(DependencyMissingError):
@@ -21,7 +22,7 @@ def test_run_json_command_raises_dependency_missing(monkeypatch):
 
 
 def test_run_json_command_raises_timeout_error(monkeypatch):
-    _COMMAND_AVAILABILITY_CACHE.clear()
+    clear_command_availability_cache()
     monkeypatch.setattr(
         "mediarchiver.common.external.shutil.which", lambda _name: "/usr/bin/exiftool"
     )
@@ -36,7 +37,7 @@ def test_run_json_command_raises_timeout_error(monkeypatch):
 
 
 def test_run_json_command_raises_execution_error_for_nonzero_exit(monkeypatch):
-    _COMMAND_AVAILABILITY_CACHE.clear()
+    clear_command_availability_cache()
     monkeypatch.setattr(
         "mediarchiver.common.external.shutil.which", lambda _name: "/usr/bin/exiftool"
     )
@@ -61,10 +62,27 @@ def test_ensure_command_available_uses_cache(monkeypatch):
         calls["count"] += 1
         return "/usr/bin/exiftool"
 
-    _COMMAND_AVAILABILITY_CACHE.clear()
+    clear_command_availability_cache()
     monkeypatch.setattr("mediarchiver.common.external.shutil.which", fake_which)
 
     ensure_command_available("exiftool")
     ensure_command_available("exiftool")
 
     assert calls["count"] == 1
+
+
+def test_clear_command_availability_cache_resets_cache(monkeypatch):
+    calls = {"count": 0}
+
+    def fake_which(_name):
+        calls["count"] += 1
+        return "/usr/bin/exiftool"
+
+    clear_command_availability_cache()
+    monkeypatch.setattr("mediarchiver.common.external.shutil.which", fake_which)
+
+    ensure_command_available("exiftool")
+    clear_command_availability_cache()
+    ensure_command_available("exiftool")
+
+    assert calls["count"] == 2

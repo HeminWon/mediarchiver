@@ -47,9 +47,13 @@ def is_valid_date(text):
 
 
 def parse_time_offset(offset_str):
-    """
-    解析 ±HH:MM 格式的时间偏移字符串，返回总分钟数。
+    """解析 ±HH:MM 格式的时间偏移字符串，返回总分钟数。
+
     例如: "+8:00" -> 480, "-5:30" -> -330, "+5:45" -> 345
+
+    This value is used to shift the EXIF date when the camera clock was set
+    incorrectly (wrong timezone selected on the device). It does NOT represent
+    a timezone offset for conversion purposes.
     """
     if offset_str is None:
         return None
@@ -68,9 +72,15 @@ def parse_time_offset(offset_str):
 
 
 def apply_time_offset_to_date(date_str, offset_minutes):
-    """
-    对 EXIF 日期字符串（格式：YYYY:MM:DD HH:MM:SS）应用分钟偏移，
-    返回同格式字符串。
+    """对 EXIF 日期字符串应用分钟偏移，返回同格式字符串（YYYY:MM:DD HH:MM:SS）。
+
+    Used only to correct a mis-set camera clock (e.g. forgot to change the
+    timezone setting while travelling). It is NOT a timezone converter —
+    EXIF dates are already local time and need no timezone adjustment under
+    normal circumstances.
+
+    If date_str contains a timezone suffix (e.g. "2026:03:07 10:47:40+09:00"),
+    the suffix is stripped and only the local datetime part is used.
     """
     if date_str is None or offset_minutes is None or offset_minutes == 0:
         return date_str
@@ -100,15 +110,11 @@ def is_VID(filename):
 def is_live_photo_video_from_metadata(filename, metadata):
     if metadata is None:
         return False
-    liveP = metadata.get(
-        "LivePhotoVitalityScore",
-        metadata.get("LivePhotoVitalityScoringVersion", metadata.get("ContentIdentifier", None)),
-    )
-    if liveP is None:
+    live_photo_fields = ["LivePhotoVitalityScore", "LivePhotoVitalityScoringVersion", "ContentIdentifier"]
+    if not any(metadata.get(f) is not None for f in live_photo_fields):
         return False
-    f, e = os.path.splitext(filename)
-    ext = e[1:]
-    return ext.lower() in ["mov"]
+    _, e = os.path.splitext(filename)
+    return e[1:].lower() == "mov"
 
 
 def get_metadata(file_path):
@@ -136,20 +142,33 @@ def get_media_date(filename):
     return get_media_date_from_metadata(metadata)
 
 
+# Priority order for extracting the capture date from EXIF/ffprobe metadata.
+#
+# All fields below record LOCAL time (the wall-clock time shown on the
+# device at the moment of capture), NOT UTC. This is intentional:
+#
+#   - DateTimeOriginal / CreateDate (EXIF): pure local time, no timezone suffix.
+#   - CreationDate (QuickTime/MP4, e.g. SONY): may carry a timezone suffix such as
+#     "+09:00", but the datetime part itself is already local time. The suffix is
+#     stripped by apply_time_offset_to_date's regex, leaving the correct local time.
+#   - MediaCreateDate (QuickTime/MP4): stores UTC — deliberately ranked AFTER
+#     CreationDate so it is only used as a last resort when no local-time field exists.
+#
+# --time-offset is NOT for timezone conversion. It exists solely to correct
+# cases where the camera clock was set to the wrong time (e.g. forgot to
+# adjust after travelling). Files with a correctly set clock need no offset.
+_MEDIA_DATE_FIELDS = [
+    "DateTimeOriginal",
+    "CreateDate",
+    "CreationDate",
+    "MediaCreateDate",
+    "DateCreated",
+    "FileInodeChangeDate",
+]
+
+
 def get_media_date_from_metadata(metadata):
     if metadata is None:
         return None
-    date = metadata.get(
-        "DateTimeOriginal",
-        metadata.get(
-            "CreateDate",
-            metadata.get(
-                "CreationDate",
-                metadata.get(
-                    "MediaCreateDate",
-                    metadata.get("DateCreated", metadata.get("FileInodeChangeDate", None)),
-                ),
-            ),
-        ),
-    )
+    date = next((metadata[f] for f in _MEDIA_DATE_FIELDS if metadata.get(f) is not None), None)
     return date if is_valid_date(date) else None

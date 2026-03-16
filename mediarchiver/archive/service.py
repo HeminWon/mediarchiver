@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import shutil
 
 from tqdm import tqdm
@@ -13,6 +14,14 @@ from mediarchiver.common.tool import (
 from mediarchiver.common.workers import map_with_workers, resolve_worker_count
 
 MAX_METADATA_PREFETCH_WORKERS = 4
+
+
+def get_prefetch_workers(item_count, requested_workers=None):
+    return resolve_worker_count(
+        item_count,
+        requested_workers=requested_workers,
+        default_max_workers=MAX_METADATA_PREFETCH_WORKERS,
+    )
 
 
 def prefetch_archive_metadata(file_paths, workers=None):
@@ -37,14 +46,17 @@ def get_archive_metadata_error(file_path):
 def get_quarter(date):
     if date is None:
         return None
-    month = int(date[5:7])
-    if month in [1, 2, 3]:
+    match = re.search(r"\d{4}[:\-](\d{2})", date)
+    if not match:
+        return None
+    month = int(match.group(1))
+    if 1 <= month <= 3:
         return "Q1"
-    if month in [4, 5, 6]:
+    if 4 <= month <= 6:
         return "Q2"
-    if month in [7, 8, 9]:
+    if 7 <= month <= 9:
         return "Q3"
-    if month in [10, 11, 12]:
+    if 10 <= month <= 12:
         return "Q4"
     return None
 

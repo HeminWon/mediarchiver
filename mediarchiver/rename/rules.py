@@ -281,13 +281,14 @@ def tag_ff_log(metadata):
     if video_stream is None:
         return None
     side_list = video_stream.get("side_data_list", None)
-    if side_list is None:
+    if not side_list:
         return None
-    side_data = side_list[0] if len(side_list) > 0 else None
-    if side_data is None:
-        return None
-    data_type = side_data.get("side_data_type", None)
-    return match_keyword_rules(data_type, FF_LOG_TAG_RULES)
+    for side_data in side_list:
+        data_type = side_data.get("side_data_type", None)
+        result = match_keyword_rules(data_type, FF_LOG_TAG_RULES)
+        if result is not None:
+            return result
+    return None
 
 
 def tag_ff_encoder(metadata):
@@ -319,9 +320,9 @@ def formatted_tags(filename, options=None):
     return None
 
 
-def formatted_tags_vid(filename, options=None):
+def formatted_tags_vid(file_or_context, options=None):
     options = options or RenameOptions()
-    context = ensure_file_context(filename)
+    context = ensure_file_context(file_or_context)
     file_path = context.file_path
     metadata_ff = context.ffprobe_metadata
     if metadata_ff is None:

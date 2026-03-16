@@ -102,7 +102,11 @@ def _default_shell_path(base_path):
 
 
 def run_with_args(args):
-    log_path = configure_logging("rename.log")
+    if args.plan:
+        log_dir = os.path.dirname(os.path.abspath(args.plan))
+    else:
+        log_dir = os.path.abspath(args.source)
+    log_path = configure_logging(log_dir, "rename.log")
     preflight_check_commands(["exiftool", "ffprobe"])
 
     if args.plan:
@@ -121,12 +125,8 @@ def run_with_args(args):
         plan = load_rename_plan(plan_path)
         if shell_path is not None:
             export_rename_plan_shell(plan, shell_path)
-        if args.apply:
+        if args.apply or args.dry_run:
             summary = apply_rename_plan(plan, dry_run=args.dry_run)
-            print_run_summary("rename", summary)
-            return
-        if args.dry_run:
-            summary = apply_rename_plan(plan, dry_run=True)
             print_run_summary("rename", summary)
             return
         print_plan_summary("rename", plan.summary)

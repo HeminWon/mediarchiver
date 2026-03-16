@@ -1,4 +1,5 @@
 import argparse
+import os
 
 from mediarchiver.archive.service import sort_files
 from mediarchiver.common.console import print_run_header, print_run_summary
@@ -46,7 +47,7 @@ def register_subparser(subparsers):
 
 def run_with_args(args):
     destination = args.to if args.to else args.source
-    log_path = configure_logging("archived.log")
+    log_path = configure_logging(os.path.abspath(args.source), "archived.log")
     preflight_check_commands(["exiftool"])
     print_run_header(
         "archive",

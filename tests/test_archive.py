@@ -229,3 +229,16 @@ def test_archive_prefetch_workers_are_clamped(monkeypatch):
     assert get_prefetch_workers(1, requested_workers=8) == 1
     assert get_prefetch_workers(5, requested_workers=8) == 2
     assert get_prefetch_workers(5) == 2
+
+
+def test_get_quarter_returns_none_for_none():
+    assert get_quarter(None) is None
+
+
+def test_get_quarter_returns_none_for_invalid_date():
+    assert get_quarter("not-a-date") is None
+
+
+def test_get_quarter_works_with_iso_format():
+    assert get_quarter("2024-03-15T10:00:00") == "Q1"
+    assert get_quarter("2024-07-01T00:00:00") == "Q3"
