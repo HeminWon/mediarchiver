@@ -8,8 +8,8 @@ from mediarchiver.cli import build_parser as build_root_parser
 from mediarchiver.common.external import CommandLoadResult
 from mediarchiver.common.tool import (
     apply_time_offset_to_date,
-    is_IMG,
-    is_VID,
+    is_img,
+    is_vid,
     load_metadata_result,
     parse_time_offset,
 )
@@ -143,8 +143,8 @@ def test_need_ignore_file_keeps_formatted_name_when_enabled(tmp_path):
 
 
 def test_mpg_is_classified_as_video_not_image():
-    assert is_VID("clip.mpg") is True
-    assert is_IMG("clip.mpg") is False
+    assert is_vid("clip.mpg") is True
+    assert is_img("clip.mpg") is False
 
 
 def test_file_number_md5_fallback_uses_cached_digest(tmp_path, monkeypatch):
@@ -254,12 +254,8 @@ def test_tag_ff_encoder_maps_h265_and_hevc_to_hevc():
 
 
 def test_tag_ff_encoder_raises_for_unknown_encoder():
-    try:
+    with pytest.raises(ValueError, match="encoder convert failure"):
         tag_ff_encoder({"streams": [{"codec_type": "video", "tags": {"encoder": "prores"}}]})
-    except ValueError as exc:
-        assert "encoder convert failure" in str(exc)
-    else:
-        raise AssertionError("Expected ValueError for unknown encoder")
 
 
 def test_apply_built_plan_dry_run_writes_operation_log_without_renaming(tmp_path, monkeypatch):

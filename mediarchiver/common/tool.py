@@ -95,14 +95,14 @@ def apply_time_offset_to_date(date_str, offset_minutes):
         return date_str
 
 
-def is_IMG(filename):
-    f, e = os.path.splitext(filename)
+def is_img(filename):
+    _, e = os.path.splitext(filename)
     ext = e[1:]
     return ext.lower() in IMAGE_EXT_LIST
 
 
-def is_VID(filename):
-    f, e = os.path.splitext(filename)
+def is_vid(filename):
+    _, e = os.path.splitext(filename)
     ext = e[1:]
     return ext.lower() in VIDEO_EXT_LIST
 

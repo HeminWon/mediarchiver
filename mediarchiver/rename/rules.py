@@ -4,7 +4,8 @@ import logging
 import os
 import re
 from decimal import Decimal
-from functools import lru_cache
+from functools import cache, lru_cache
+from typing import Optional, Union
 
 from mediarchiver.common.tool import (
     FILE_EXT_LIST,
@@ -69,7 +70,7 @@ def live_photo_match_image(folder_path, filter_num):
     return _live_photo_image_lookup(folder_path).get(filter_num)
 
 
-@lru_cache(maxsize=None)
+@cache
 def _live_photo_mov_lookup(folder_path):
     """Build a 4-digit-num -> mov_file_path lookup for Live Photo pairing.
 
@@ -92,7 +93,7 @@ def live_photo_match_mov(folder_path, filter_num):
     return _live_photo_mov_lookup(folder_path).get(filter_num)
 
 
-@lru_cache(maxsize=None)
+@cache
 def _sony_xml_lookup_by_video_stem(folder_path):
     """Build a video_stem -> [xml_file_path, ...] lookup for SONY XML pairing.
 
@@ -121,7 +122,7 @@ def sony_xml_match_xmls(folder_path, video_file):
     return _sony_xml_lookup_by_video_stem(folder_path).get(video_stem.upper(), [])
 
 
-@lru_cache(maxsize=None)
+@cache
 def _live_photo_image_lookup(folder_path):
     pattern_str = rf"(\d{{4}})\.({'|'.join(IMAGE_EXT_LIST)})$".replace(" ", "")
     pattern = re.compile(pattern_str, re.IGNORECASE)
@@ -415,15 +416,30 @@ def ensure_file_context(file_or_context):
     return build_file_metadata_context(file_or_context)
 
 
-def generate_new_filename_prefix(folder_path, obj=None, options=None):
+def generate_new_filename_prefix(
+    folder_path_or_context: "Union[str, FileMetadataContext]",
+    obj: "Optional[str]" = None,
+    options: "Optional[RenameOptions]" = None,
+) -> "Optional[str]":
+    """Generate the new filename prefix (without extension) for a media file.
+
+    Args:
+        folder_path_or_context: Either a folder path (str) paired with *obj*, or a
+            pre-built :class:`FileMetadataContext` (in which case *obj* is ignored).
+        obj: Filename within *folder_path_or_context*. Required when
+            *folder_path_or_context* is a plain string path.
+        options: Rename options; defaults to :class:`RenameOptions` defaults.
+    """
     options = options or RenameOptions()
-    if isinstance(folder_path, FileMetadataContext):
-        context = folder_path
+    if isinstance(folder_path_or_context, FileMetadataContext):
+        context = folder_path_or_context
         obj = context.file_name
     else:
         if obj is None:
-            raise ValueError("obj is required when folder_path is not a FileMetadataContext")
-        context = build_file_metadata_context(os.path.join(folder_path, obj))
+            raise ValueError(
+                "obj is required when folder_path_or_context is not a FileMetadataContext"
+            )
+        context = build_file_metadata_context(os.path.join(folder_path_or_context, obj))
     date = context.media_date
     if date is None:
         logging.error(f"date is invalid: {obj}")
@@ -450,15 +466,29 @@ def generate_new_filename_prefix(folder_path, obj=None, options=None):
     return "_".join(items)
 
 
-def generate_new_filename(folder_path, obj=None, options=None):
+def generate_new_filename(
+    folder_path_or_context: "Union[str, FileMetadataContext]",
+    obj: "Optional[str]" = None,
+    options: "Optional[RenameOptions]" = None,
+) -> "Optional[str]":
+    """Generate the full new filename (with extension) for a media file.
+
+    Args:
+        folder_path_or_context: Either a folder path (str) paired with *obj*, or a
+            pre-built :class:`FileMetadataContext`.
+        obj: Filename within *folder_path_or_context*. Required when a plain path is passed.
+        options: Rename options; defaults to :class:`RenameOptions` defaults.
+    """
     options = options or RenameOptions()
-    if isinstance(folder_path, FileMetadataContext):
-        context = folder_path
+    if isinstance(folder_path_or_context, FileMetadataContext):
+        context = folder_path_or_context
         obj = context.file_name
     else:
         if obj is None:
-            raise ValueError("obj is required when folder_path is not a FileMetadataContext")
-        context = build_file_metadata_context(os.path.join(folder_path, obj))
+            raise ValueError(
+                "obj is required when folder_path_or_context is not a FileMetadataContext"
+            )
+        context = build_file_metadata_context(os.path.join(folder_path_or_context, obj))
     ext = context.extension
     prefix = generate_new_filename_prefix(context, options=options)
     return prefix + ext if prefix is not None else None

@@ -3,7 +3,7 @@ import shlex
 from collections import Counter
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 RENAME_PLAN_VERSION = 1
 
@@ -15,7 +15,7 @@ class RenamePlanItem:
     action: str
     status: str
     reason: Optional[str] = None
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self):
         return asdict(self)
@@ -37,8 +37,8 @@ class RenamePlan:
     version: int
     operation: str
     source_dir: str
-    options: Dict[str, Any]
-    items: List[RenamePlanItem]
+    options: dict[str, Any]
+    items: list[RenamePlanItem]
 
     @property
     def summary(self):

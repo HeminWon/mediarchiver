@@ -1,7 +1,7 @@
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from mediarchiver.common.external import (
     CommandLoadResult,
@@ -12,9 +12,9 @@ from mediarchiver.common.external import (
 )
 from mediarchiver.common.tool import (
     get_media_date_from_metadata,
-    is_IMG,
+    is_img,
     is_live_photo_video_from_metadata,
-    is_VID,
+    is_vid,
     load_metadata_result,
 )
 
@@ -59,8 +59,8 @@ class FileMetadataContext:
     file_path: str
     exif_result: CommandLoadResult
     ffprobe_result: Optional[CommandLoadResult]
-    exif_metadata: Optional[Dict[str, Any]]
-    ffprobe_metadata: Optional[Dict[str, Any]]
+    exif_metadata: Optional[dict[str, Any]]
+    ffprobe_metadata: Optional[dict[str, Any]]
     media_date: Optional[str]
     is_image: bool
     is_video: bool
@@ -76,8 +76,8 @@ class FileMetadataContext:
 
 
 def build_file_metadata_context(file_path):
-    is_image = is_IMG(file_path)
-    is_video = is_VID(file_path)
+    is_image = is_img(file_path)
+    is_video = is_vid(file_path)
     ffprobe_result = None
     ffprobe_metadata = None
 

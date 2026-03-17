@@ -186,7 +186,6 @@ def archive_obj(
 
 
 def sort_files(folder_path, target_path, dry_run=False, workers=None, by="quarter"):
-    report_logger = OperationLogger(folder_path, "archive")
     if not os.path.isdir(folder_path):
         raise ValueError(f"source directory does not exist: {folder_path}")
     try:
@@ -202,17 +201,18 @@ def sort_files(folder_path, target_path, dry_run=False, workers=None, by="quarte
         ],
         workers=workers,
     )
-    process_objs = tqdm(objects)
-    for obj in process_objs:
-        process_objs.set_description("Processing " + obj)
-        archive_obj(
-            folder_path,
-            target_path,
-            obj,
-            dry_run=dry_run,
-            report_logger=report_logger,
-            metadata_cache=metadata_cache,
-            mode=by,
-        )
-    process_objs.close()
-    return report_logger.summary.as_dict()
+    with OperationLogger(folder_path, "archive") as report_logger:
+        process_objs = tqdm(objects)
+        for obj in process_objs:
+            process_objs.set_description("Processing " + obj)
+            archive_obj(
+                folder_path,
+                target_path,
+                obj,
+                dry_run=dry_run,
+                report_logger=report_logger,
+                metadata_cache=metadata_cache,
+                mode=by,
+            )
+        process_objs.close()
+        return report_logger.summary.as_dict()

@@ -23,17 +23,18 @@ def print_run_header(operation, values):
 def print_run_summary(operation, summary):
     lines = [
         f"[{operation}] done",
-        f"- total: {summary['total']}",
-        f"- success: {summary['success']}",
-        f"- preview: {summary['preview']}",
-        f"- skipped: {summary['skipped']}",
-        f"- conflict: {summary['conflict']}",
+        f"- total: {summary.get('total', 0)}",
+        f"- success: {summary.get('success', 0)}",
+        f"- preview: {summary.get('preview', 0)}",
+        f"- skipped: {summary.get('skipped', 0)}",
+        f"- conflict: {summary.get('conflict', 0)}",
     ]
-    if summary["reasons"]:
+    reasons = summary.get("reasons", {})
+    if reasons:
         top_reasons = ", ".join(
             f"{reason}={count}"
             for reason, count in sorted(
-                summary["reasons"].items(), key=lambda item: (-item[1], item[0])
+                reasons.items(), key=lambda item: (-item[1], item[0])
             )[:5]
         )
         lines.append(f"- reasons: {top_reasons}")
@@ -43,10 +44,10 @@ def print_run_summary(operation, summary):
 def print_plan_summary(operation, summary):
     lines = [
         f"[{operation}] plan",
-        f"- total: {summary['total']}",
-        f"- ready: {summary['ready']}",
-        f"- skipped: {summary['skipped']}",
-        f"- conflict: {summary['conflict']}",
-        f"- invalid: {summary['invalid']}",
+        f"- total: {summary.get('total', 0)}",
+        f"- ready: {summary.get('ready', 0)}",
+        f"- skipped: {summary.get('skipped', 0)}",
+        f"- conflict: {summary.get('conflict', 0)}",
+        f"- invalid: {summary.get('invalid', 0)}",
     ]
     _print_lines(lines)
