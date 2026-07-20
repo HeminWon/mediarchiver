@@ -37,6 +37,10 @@ pipx upgrade mediarchiver
 
 ## Usage
 
+### Batch-specific metadata inspection
+
+For custom batch rename scripts, inspect representative files directly with `exiftool` and `ffprobe` as described in the project batch-rename skill.
+
 ### Rename
 
 Preview rename plan (no files are modified):

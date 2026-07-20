@@ -40,7 +40,11 @@ addopts = "--cov=mediarchiver --cov-report=term-missing"
 
 [tool.coverage.run]
 source = ["mediarchiver"]
-omit = ["mediarchiver/__main__.py", "mediarchiver/rename/__main__.py", "mediarchiver/archive/__main__.py"]
+omit = [
+  "mediarchiver/__main__.py",
+  "mediarchiver/rename/__main__.py",
+  "mediarchiver/archive/__main__.py",
+]
 
 [tool.ruff]
 line-length = 100

@@ -14,6 +14,7 @@
         pythonEnv = python.withPackages (ps: [
           ps.pip
           ps.pytest
+          ps.pytest-cov
           ps.tqdm
         ]);
       in {

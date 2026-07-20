@@ -195,6 +195,24 @@ python3 -m mediarchiver rename --plan rename-plan.json --dry-run
 python3 -m mediarchiver rename --plan rename-plan.json --shell
 ```
 
+### AI 生成批次脚本的推荐流程
+
+对于默认规则无法很好覆盖的素材批次，推荐使用 AI 生成专用 Python 脚本，而不是继续扩展核心通用规则：
+
+```bash
+exiftool -json -G -n <sample-file> > inspect-exiftool.json
+ffprobe -v error -print_format json -show_format -show_streams <sample-video> > inspect-ffprobe.json
+python rename/rename_dji_pocket4p.py <source>
+python rename/rename_dji_pocket4p.py <source> --apply
+```
+
+约定：
+
+- 生成脚本默认只预览，不修改文件
+- `--apply` 才允许实际重命名
+- 脚本应检查目标文件是否已存在、目标名是否重复，以及必要元数据是否缺失
+- 脚本输出应包含 ready / skipped / conflict / invalid 汇总
+
 ### 视频编码标签
 
 视频命名中涉及编码标签时，当前使用以下规则：
