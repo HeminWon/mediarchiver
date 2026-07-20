@@ -50,4 +50,13 @@ def print_plan_summary(operation, summary):
         f"- conflict: {summary.get('conflict', 0)}",
         f"- invalid: {summary.get('invalid', 0)}",
     ]
+    optional_missing = summary.get("optional_missing", {})
+    if optional_missing:
+        top_missing = ", ".join(
+            f"{field}={count}"
+            for field, count in sorted(
+                optional_missing.items(), key=lambda item: (-item[1], item[0])
+            )[:5]
+        )
+        lines.append(f"- optional missing: {top_missing}")
     _print_lines(lines)

@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from builtins import open as builtin_open
 
 import pytest
@@ -24,6 +25,11 @@ from mediarchiver.rename import (
     write_rename_plan,
 )
 from mediarchiver.rename.cli import validate_args
+from mediarchiver.rename.fingerprint import (
+    clear_fingerprint_cache,
+    get_content_fingerprint,
+    get_file_md5,
+)
 from mediarchiver.rename.metadata import (
     FileMetadataContext,
     build_file_metadata_context,
@@ -31,11 +37,11 @@ from mediarchiver.rename.metadata import (
 )
 from mediarchiver.rename.rules import (
     calculate_resolution,
-    clear_md5_cache,
     deal_with_m,
     file_number,
+    filename_field_details,
     generate_new_filename,
-    get_md5,
+    generated_original_id,
     need_ignore_file,
     tag_c,
     tag_ff_encoder,
@@ -135,6 +141,12 @@ def test_need_ignore_file_skips_formatted_name_by_default(tmp_path):
     assert need_ignore_file(str(tmp_path), file_path.name, options) is True
 
 
+def test_is_formatted_file_name_accepts_four_digit_content_fingerprint_id():
+    from mediarchiver.rename.rules import is_formatted_file_name
+
+    assert is_formatted_file_name("20240102-030405_MSON_FHD-25FPS-AVC_4827.MOV")
+
+
 def test_need_ignore_file_keeps_formatted_name_when_enabled(tmp_path):
     file_path = tmp_path / "20230226-090511_MiPh_2348.HEIC"
     file_path.write_text("demo", encoding="utf-8")
@@ -147,12 +159,12 @@ def test_mpg_is_classified_as_video_not_image():
     assert is_img("clip.mpg") is False
 
 
-def test_file_number_md5_fallback_uses_cached_digest(tmp_path, monkeypatch):
+def test_file_number_fingerprint_fallback_uses_cached_digest(tmp_path, monkeypatch):
     media_file = tmp_path / "clip.mov"
     media_file.write_text("demo", encoding="utf-8")
     observed = {"count": 0}
 
-    clear_md5_cache()
+    clear_fingerprint_cache()
 
     def counting_open(file, *args, **kwargs):
         if str(file) == str(media_file):
@@ -168,12 +180,12 @@ def test_file_number_md5_fallback_uses_cached_digest(tmp_path, monkeypatch):
     assert observed["count"] == 1
 
 
-def test_get_md5_cache_invalidates_when_file_changes(tmp_path, monkeypatch):
+def test_get_file_md5_cache_invalidates_when_file_changes(tmp_path, monkeypatch):
     media_file = tmp_path / "clip.mov"
     media_file.write_text("demo", encoding="utf-8")
     observed = {"count": 0}
 
-    clear_md5_cache()
+    clear_fingerprint_cache()
 
     def counting_open(file, *args, **kwargs):
         if str(file) == str(media_file):
@@ -182,12 +194,52 @@ def test_get_md5_cache_invalidates_when_file_changes(tmp_path, monkeypatch):
 
     monkeypatch.setattr("builtins.open", counting_open)
 
-    first = get_md5(str(media_file))
+    first = get_file_md5(str(media_file))
     media_file.write_text("demo-updated", encoding="utf-8")
-    second = get_md5(str(media_file))
+    second = get_file_md5(str(media_file))
 
     assert first != second
     assert observed["count"] == 2
+
+
+def test_generated_original_id_prefers_filename_number(tmp_path, monkeypatch):
+    media_file = tmp_path / "IMG_1234.HEIC"
+    media_file.write_text("demo", encoding="utf-8")
+
+    def fail_fingerprint(_file_name):
+        raise AssertionError("fingerprint should not be used when filename has an original id")
+
+    monkeypatch.setattr("mediarchiver.rename.rules.get_content_fingerprint", fail_fingerprint)
+
+    assert generated_original_id(str(media_file)) == "1234"
+
+
+def test_generated_original_id_uses_content_fingerprint_when_filename_number_missing(tmp_path):
+    media_file = tmp_path / "clip.mov"
+    media_file.write_text("demo", encoding="utf-8")
+
+    original_id = generated_original_id(str(media_file))
+
+    assert original_id.isdigit()
+    assert len(original_id) == 4
+    assert original_id == generated_original_id(str(media_file))
+
+
+def test_content_fingerprint_samples_large_files(tmp_path, monkeypatch):
+    media_file = tmp_path / "large.mov"
+    media_file.write_bytes(b"a" * 20 + b"b" * 20)
+
+    monkeypatch.setattr("mediarchiver.rename.fingerprint.FINGERPRINT_SMALL_FILE_THRESHOLD", 10)
+    monkeypatch.setattr("mediarchiver.rename.fingerprint.FINGERPRINT_SAMPLE_BYTES", 5)
+
+    clear_fingerprint_cache()
+    first = get_content_fingerprint(str(media_file))
+
+    media_file.write_bytes(b"a" * 5 + b"x" * 30 + b"b" * 5)
+    clear_fingerprint_cache()
+    second = get_content_fingerprint(str(media_file))
+
+    assert first == second
 
 
 def test_deal_with_m_maps_known_make_with_table_rules():
@@ -524,7 +576,7 @@ def test_apply_built_plan_records_success(tmp_path, monkeypatch):
 
 
 def test_generate_new_filename_reuses_preloaded_metadata(tmp_path, monkeypatch):
-    video_file = tmp_path / "clip.mov"
+    video_file = tmp_path / "IMG_7657.mov"
     video_file.write_text("demo", encoding="utf-8")
     calls = {"exif": 0, "ffprobe": 0}
 
@@ -535,6 +587,7 @@ def test_generate_new_filename_reuses_preloaded_metadata(tmp_path, monkeypatch):
             data={
                 "DateTimeOriginal": "2024:01:02 03:04:05",
                 "Make": "Apple",
+                "Model": "iPhone 15 Pro",
             },
         )
 
@@ -566,9 +619,347 @@ def test_generate_new_filename_reuses_preloaded_metadata(tmp_path, monkeypatch):
     context = build_file_metadata_context(str(video_file))
 
     assert generate_new_filename(context, options=RenameOptions()) == (
-        "20240102-030405_MiPh-FHD-29.97FPS-AVC_7657.mov"
+        "20240102-030405_iPhone15Pro_FHD-29.97FPS-AVC_7657.mov"
     )
     assert calls == {"exif": 1, "ffprobe": 1}
+
+
+def test_filename_field_details_records_required_and_optional_fields(tmp_path):
+    video_file = tmp_path / "C1234.MP4"
+    video_file.write_text("demo", encoding="utf-8")
+
+    context = FileMetadataContext(
+        file_path=str(video_file),
+        exif_result=CommandLoadResult(
+            tool_name="exiftool",
+            data={"DateTimeOriginal": "2024:01:02 03:04:05", "Make": "SONY"},
+        ),
+        ffprobe_result=CommandLoadResult(
+            tool_name="ffprobe",
+            data={
+                "streams": [
+                    {
+                        "codec_type": "video",
+                        "width": 1920,
+                        "height": 1080,
+                        "avg_frame_rate": "25/1",
+                        "tags": {"encoder": "h264"},
+                    }
+                ]
+            },
+        ),
+        exif_metadata={"DateTimeOriginal": "2024:01:02 03:04:05", "Make": "SONY"},
+        ffprobe_metadata={
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "width": 1920,
+                    "height": 1080,
+                    "avg_frame_rate": "25/1",
+                    "tags": {"encoder": "h264"},
+                }
+            ]
+        },
+        media_date="2024:01:02 03:04:05",
+        is_image=False,
+        is_video=True,
+        is_live_photo_video=False,
+    )
+
+    details = filename_field_details(context, options=RenameOptions())
+
+    assert details["required"] == {
+        "date": "20240102-030405",
+        "device_unit": "MSON",
+        "original_id": "1234",
+        "original_id_source": "filename",
+    }
+    assert details["optional"]["tech_tags"] == "FHD-25FPS-AVC"
+    assert details["optional"]["missing"] == ["log"]
+
+
+def test_build_rename_plan_summary_counts_optional_missing_fields(tmp_path, monkeypatch):
+    video_file = tmp_path / "C1234.MP4"
+    video_file.write_text("demo", encoding="utf-8")
+
+    def fake_context(file_path):
+        return FileMetadataContext(
+            file_path=file_path,
+            exif_result=CommandLoadResult(
+                tool_name="exiftool",
+                data={"DateTimeOriginal": "2024:01:02 03:04:05", "Make": "SONY"},
+            ),
+            ffprobe_result=CommandLoadResult(
+                tool_name="ffprobe",
+                data={
+                    "streams": [
+                        {
+                            "codec_type": "video",
+                            "width": 1920,
+                            "height": 1080,
+                            "avg_frame_rate": "25/1",
+                            "tags": {"encoder": "h264"},
+                        }
+                    ]
+                },
+            ),
+            exif_metadata={"DateTimeOriginal": "2024:01:02 03:04:05", "Make": "SONY"},
+            ffprobe_metadata={
+                "streams": [
+                    {
+                        "codec_type": "video",
+                        "width": 1920,
+                        "height": 1080,
+                        "avg_frame_rate": "25/1",
+                        "tags": {"encoder": "h264"},
+                    }
+                ]
+            },
+            media_date="2024:01:02 03:04:05",
+            is_image=False,
+            is_video=True,
+            is_live_photo_video=False,
+        )
+
+    monkeypatch.setattr("mediarchiver.rename.service.build_file_metadata_context", fake_context)
+
+    plan = build_rename_plan(str(tmp_path), RenameOptions())
+    item = next(item for item in plan.items if item.source == str(video_file))
+
+    assert item.details["optional"]["missing"] == ["log"]
+    assert plan.summary["optional_missing"] == {"log": 1}
+
+
+def test_build_rename_plan_accepts_content_fingerprint_original_id(tmp_path, monkeypatch):
+    video_file = tmp_path / "clip.MP4"
+    video_file.write_text("demo", encoding="utf-8")
+
+    def fake_context(file_path):
+        return FileMetadataContext(
+            file_path=file_path,
+            exif_result=CommandLoadResult(
+                tool_name="exiftool",
+                data={"DateTimeOriginal": "2024:01:02 03:04:05", "Make": "SONY"},
+            ),
+            ffprobe_result=CommandLoadResult(
+                tool_name="ffprobe",
+                data={
+                    "streams": [
+                        {
+                            "codec_type": "video",
+                            "width": 1920,
+                            "height": 1080,
+                            "avg_frame_rate": "25/1",
+                            "tags": {"encoder": "h264"},
+                        }
+                    ]
+                },
+            ),
+            exif_metadata={"DateTimeOriginal": "2024:01:02 03:04:05", "Make": "SONY"},
+            ffprobe_metadata={
+                "streams": [
+                    {
+                        "codec_type": "video",
+                        "width": 1920,
+                        "height": 1080,
+                        "avg_frame_rate": "25/1",
+                        "tags": {"encoder": "h264"},
+                    }
+                ]
+            },
+            media_date="2024:01:02 03:04:05",
+            is_image=False,
+            is_video=True,
+            is_live_photo_video=False,
+        )
+
+    monkeypatch.setattr("mediarchiver.rename.service.build_file_metadata_context", fake_context)
+
+    plan = build_rename_plan(str(tmp_path), RenameOptions())
+    item = next(item for item in plan.items if item.source == str(video_file))
+
+    assert item.status == "ready"
+    assert item.destination is not None
+    assert re.search(r"_\d{4}\.MP4$", item.destination)
+    assert item.details["required"]["original_id_source"] == "content_fingerprint"
+
+
+def test_generate_new_filename_uses_fingerprint_when_original_id_is_missing(tmp_path):
+    video_file = tmp_path / "clip.mov"
+    video_file.write_text("demo", encoding="utf-8")
+
+    context = FileMetadataContext(
+        file_path=str(video_file),
+        exif_result=CommandLoadResult(
+            tool_name="exiftool",
+            data={
+                "DateTimeOriginal": "2024:01:02 03:04:05",
+                "Make": "SONY",
+            },
+        ),
+        ffprobe_result=CommandLoadResult(
+            tool_name="ffprobe",
+            data={
+                "streams": [
+                    {
+                        "codec_type": "video",
+                        "width": 1920,
+                        "height": 1080,
+                        "avg_frame_rate": "25/1",
+                        "tags": {"encoder": "h264"},
+                    }
+                ]
+            },
+        ),
+        exif_metadata={"DateTimeOriginal": "2024:01:02 03:04:05", "Make": "SONY"},
+        ffprobe_metadata={
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "width": 1920,
+                    "height": 1080,
+                    "avg_frame_rate": "25/1",
+                    "tags": {"encoder": "h264"},
+                }
+            ]
+        },
+        media_date="2024:01:02 03:04:05",
+        is_image=False,
+        is_video=True,
+        is_live_photo_video=False,
+    )
+
+    new_file_name = generate_new_filename(context, options=RenameOptions())
+
+    assert new_file_name is not None
+    assert re.match(r"^20240102-030405_MSON_FHD-25FPS-AVC_\d{4}\.mov$", new_file_name)
+    assert new_file_name.endswith(".mov")
+
+
+def test_generate_new_filename_rejects_apple_without_specific_model(tmp_path):
+    img_file = tmp_path / "IMG_1234.HEIC"
+    img_file.write_text("demo", encoding="utf-8")
+
+    context = FileMetadataContext(
+        file_path=str(img_file),
+        exif_result=CommandLoadResult(
+            tool_name="exiftool",
+            data={
+                "DateTimeOriginal": "2024:01:02 03:04:05",
+                "Make": "Apple",
+            },
+        ),
+        ffprobe_result=None,
+        exif_metadata={
+            "DateTimeOriginal": "2024:01:02 03:04:05",
+            "Make": "Apple",
+        },
+        ffprobe_metadata=None,
+        media_date="2024:01:02 03:04:05",
+        is_image=True,
+        is_video=False,
+        is_live_photo_video=False,
+    )
+
+    assert generate_new_filename(context, options=RenameOptions()) is None
+
+
+def test_build_rename_plan_records_missing_required_fields(tmp_path, monkeypatch):
+    img_file = tmp_path / "IMG_1234.HEIC"
+    img_file.write_text("demo", encoding="utf-8")
+
+    def fake_context(file_path):
+        return FileMetadataContext(
+            file_path=file_path,
+            exif_result=CommandLoadResult(
+                tool_name="exiftool",
+                data={"DateTimeOriginal": "2024:01:02 03:04:05", "Make": "Apple"},
+            ),
+            ffprobe_result=None,
+            exif_metadata={"DateTimeOriginal": "2024:01:02 03:04:05", "Make": "Apple"},
+            ffprobe_metadata=None,
+            media_date="2024:01:02 03:04:05",
+            is_image=True,
+            is_video=False,
+            is_live_photo_video=False,
+        )
+
+    monkeypatch.setattr("mediarchiver.rename.service.build_file_metadata_context", fake_context)
+
+    plan = build_rename_plan(str(tmp_path), RenameOptions())
+    item = next(item for item in plan.items if item.source == str(img_file))
+
+    assert item.status == "skipped"
+    assert item.reason == "missing_required_field"
+    assert item.details["missing_required"] == ["device_unit"]
+
+
+def test_generate_new_filename_marks_iphone_front_camera_as_selfie(tmp_path):
+    img_file = tmp_path / "IMG_1234.HEIC"
+    img_file.write_text("demo", encoding="utf-8")
+
+    context = FileMetadataContext(
+        file_path=str(img_file),
+        exif_result=CommandLoadResult(
+            tool_name="exiftool",
+            data={
+                "DateTimeOriginal": "2024:01:02 03:04:05",
+                "Make": "Apple",
+                "Model": "iPhone 15 Pro",
+                "LensID": "iPhone front camera 2.87mm f/2.2",
+            },
+        ),
+        ffprobe_result=None,
+        exif_metadata={
+            "DateTimeOriginal": "2024:01:02 03:04:05",
+            "Make": "Apple",
+            "Model": "iPhone 15 Pro",
+            "LensID": "iPhone front camera 2.87mm f/2.2",
+        },
+        ffprobe_metadata=None,
+        media_date="2024:01:02 03:04:05",
+        is_image=True,
+        is_video=False,
+        is_live_photo_video=False,
+    )
+
+    assert generate_new_filename(context, options=RenameOptions()) == (
+        "20240102-030405_iPhone15Pro-Selfie_1234.HEIC"
+    )
+
+
+def test_generate_new_filename_marks_iphone_screenshot_in_device_unit(tmp_path):
+    img_file = tmp_path / "IMG_1234.PNG"
+    img_file.write_text("demo", encoding="utf-8")
+
+    context = FileMetadataContext(
+        file_path=str(img_file),
+        exif_result=CommandLoadResult(
+            tool_name="exiftool",
+            data={
+                "DateTimeOriginal": "2024:01:02 03:04:05",
+                "Make": "Apple",
+                "Model": "iPhone 15 Pro",
+                "UserComment": "Screenshot",
+            },
+        ),
+        ffprobe_result=None,
+        exif_metadata={
+            "DateTimeOriginal": "2024:01:02 03:04:05",
+            "Make": "Apple",
+            "Model": "iPhone 15 Pro",
+            "UserComment": "Screenshot",
+        },
+        ffprobe_metadata=None,
+        media_date="2024:01:02 03:04:05",
+        is_image=True,
+        is_video=False,
+        is_live_photo_video=False,
+    )
+
+    assert generate_new_filename(context, options=RenameOptions()) == (
+        "20240102-030405_iPhone15Pro-Screenshot_1234.PNG"
+    )
 
 
 def test_build_file_metadata_context_loads_video_metadata_once(tmp_path, monkeypatch):
@@ -1118,7 +1509,7 @@ def test_build_rename_plan_includes_xml_sidecar_for_video(tmp_path, monkeypatch)
     monkeypatch.setattr("mediarchiver.rename.service.build_file_metadata_context", fake_context)
     monkeypatch.setattr(
         "mediarchiver.rename.service.generate_new_filename",
-        lambda *_args, **_kwargs: "20240101-120000_MSON-4K-25FPS-AVC_0212.MP4",
+        lambda *_args, **_kwargs: "20240101-120000_MSON_4K-25FPS-AVC_0212.MP4",
     )
 
     plan = build_rename_plan(str(tmp_path), RenameOptions())
@@ -1129,9 +1520,11 @@ def test_build_rename_plan_includes_xml_sidecar_for_video(tmp_path, monkeypatch)
     xml_items = [item for item in plan.items if item.source == str(xml_file)]
 
     assert str(xml_file) in sources
-    assert str(tmp_path / "20240101-120000_MSON-4K-25FPS-AVC_0212M01.XML") in destinations
+    assert str(tmp_path / "20240101-120000_MSON_4K-25FPS-AVC_0212M01.XML") in destinations
     assert len(ready_items) == 2
     assert len(xml_items) == 1, "XML should appear exactly once in the plan"
+    assert xml_items[0].details["sidecar_rule"] == "sony_xml"
+    assert xml_items[0].details["paired_with"] == str(video_file)
 
 
 def test_build_rename_plan_includes_xml_sidecar_for_already_formatted_video(tmp_path, monkeypatch):
@@ -1140,10 +1533,10 @@ def test_build_rename_plan_includes_xml_sidecar_for_already_formatted_video(tmp_
     from mediarchiver.rename.rules import _sony_xml_lookup_by_video_stem
     _sony_xml_lookup_by_video_stem.cache_clear()
 
-    formatted_name = "20240101-120000_MSON-4K-25FPS-AVC_0212.MP4"
+    formatted_name = "20240101-120000_MSON_4K-25FPS-AVC_0212.MP4"
     video_file = tmp_path / formatted_name
     video_file.write_text("dummy")
-    xml_file = tmp_path / "20240101-120000_MSON-4K-25FPS-AVC_0212M01.XML"
+    xml_file = tmp_path / "20240101-120000_MSON_4K-25FPS-AVC_0212M01.XML"
     xml_file.write_text("<xml/>")
 
     def fake_context(file_path):
@@ -1174,6 +1567,8 @@ def test_build_rename_plan_includes_xml_sidecar_for_already_formatted_video(tmp_
     assert len(xml_items) == 1, "XML should appear exactly once in the plan"
     assert xml_items[0].status == "skipped"
     assert xml_items[0].reason == "already_formatted"
+    assert xml_items[0].details["sidecar_rule"] == "sony_xml"
+    assert xml_items[0].details["paired_with"] == str(video_file)
     video_items = [item for item in plan.items if item.source == str(video_file)]
     assert len(video_items) == 1
     assert video_items[0].status == "skipped"
@@ -1238,6 +1633,8 @@ def test_build_rename_plan_includes_live_photo_mov_for_image(tmp_path, monkeypat
     assert str(tmp_path / "20240101-120000_MiPh_1234.MOV") in destinations
     assert len(ready_items) == 2
     assert len(mov_items) == 1, "Live photo MOV should appear exactly once in the plan"
+    assert mov_items[0].details["sidecar_rule"] == "apple_live_photo"
+    assert mov_items[0].details["paired_with"] == str(img_file)
 
 
 # --- OperationLogger persistent file handle ---
@@ -1276,6 +1673,25 @@ def test_operation_logger_context_manager(tmp_path):
 
     ops = (tmp_path / "rename_operations.jsonl").read_text(encoding="utf-8").strip().splitlines()
     assert len(ops) == 1
+
+
+def test_print_plan_summary_includes_optional_missing(capsys):
+    from mediarchiver.common.console import print_plan_summary
+
+    print_plan_summary(
+        "rename",
+        {
+            "total": 2,
+            "ready": 2,
+            "skipped": 0,
+            "conflict": 0,
+            "invalid": 0,
+            "optional_missing": {"log": 2, "codec": 1},
+        },
+    )
+
+    output = capsys.readouterr().out
+    assert "- optional missing: log=2, codec=1" in output
 
 
 # --- configure_logging writes to source dir ---

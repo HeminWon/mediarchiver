@@ -1,6 +1,7 @@
 # mediarchiver
 
-A CLI tool for renaming and archiving media files using Exif metadata.
+A CLI tool for renaming and archiving media files using metadata from
+exiftool and ffprobe.
 
 ## Requirements
 
@@ -68,6 +69,12 @@ Control metadata read concurrency:
 mediarchiver rename <source> --workers 2
 ```
 
+Correct a camera clock offset:
+
+```bash
+mediarchiver rename <source> --time-offset +8:00
+```
+
 Export rename operations as a shell script:
 
 ```bash
@@ -85,10 +92,13 @@ mediarchiver rename --plan rename-plan.json --shell
 
 ### Archive
 
-Move files into a year/quarter directory structure:
+Move files into date-based directory structures:
 
 ```bash
 mediarchiver archive <source> --to <target>
+mediarchiver archive <source> --to <target> --by quarter
+mediarchiver archive <source> --to <target> --by month
+mediarchiver archive <source> --to <target> --by year
 mediarchiver archive <source> --to <target> --dry-run
 mediarchiver archive <source> --to <target> --workers 2
 ```

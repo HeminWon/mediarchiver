@@ -1,57 +1,56 @@
-import glob
-import hashlib
 import logging
 import os
 import re
-from decimal import Decimal
-from functools import cache, lru_cache
 from typing import Optional, Union
 
 from mediarchiver.common.tool import (
     FILE_EXT_LIST,
-    IMAGE_EXT_LIST,
     apply_time_offset_to_date,
     is_sony_xml,
-    sony_xml_video_stem,
 )
+from mediarchiver.rename import fingerprint
+from mediarchiver.rename import tags as tag_rules
+from mediarchiver.rename.brand_rules import apple as apple_brand_rules
+from mediarchiver.rename.brand_rules import filter_image_tech_tags, format_device_unit
+from mediarchiver.rename.brand_rules import sony as sony_brand_rules
 from mediarchiver.rename.metadata import (
     FileMetadataContext,
     build_file_metadata_context,
-    get_video_metadata_ff,
 )
 from mediarchiver.rename.options import RenameOptions
 
+_live_photo_image_lookup = apple_brand_rules._live_photo_image_lookup
+_live_photo_mov_lookup = apple_brand_rules._live_photo_mov_lookup
+live_photo_match_image = apple_brand_rules.live_photo_match_image
+live_photo_match_mov = apple_brand_rules.live_photo_match_mov
+_sony_xml_lookup_by_video_stem = sony_brand_rules._sony_xml_lookup_by_video_stem
+sony_xml_match_xmls = sony_brand_rules.sony_xml_match_xmls
 
-@lru_cache(maxsize=1024)
-def _get_md5_cached(cache_key):
-    filename, _, _, _ = cache_key
-    md5 = hashlib.md5()
-    with open(filename, "rb") as file_obj:
-        while True:
-            data = file_obj.read(8192)
-            if not data:
-                break
-            md5.update(data)
-    return md5.hexdigest()
+FINGERPRINT_SAMPLE_BYTES = fingerprint.FINGERPRINT_SAMPLE_BYTES
+FINGERPRINT_SMALL_FILE_THRESHOLD = fingerprint.FINGERPRINT_SMALL_FILE_THRESHOLD
+clear_fingerprint_cache = fingerprint.clear_fingerprint_cache
+content_fingerprint_id = fingerprint.content_fingerprint_id
+get_content_fingerprint = fingerprint.get_content_fingerprint
+get_file_md5 = fingerprint.get_file_md5
+get_md5 = get_file_md5
+clear_md5_cache = clear_fingerprint_cache
 
-
-def _get_md5_cache_key(filename):
-    absolute_path = os.path.abspath(filename)
-    stat_result = os.stat(absolute_path)
-    return (
-        absolute_path,
-        stat_result.st_ino,
-        stat_result.st_size,
-        stat_result.st_mtime_ns,
-    )
-
-
-def get_md5(filename):
-    return _get_md5_cached(_get_md5_cache_key(filename))
-
-
-def clear_md5_cache():
-    _get_md5_cached.cache_clear()
+MAKE_MODEL_TAG_RULES = tag_rules.MAKE_MODEL_TAG_RULES
+FF_ENCODER_TAG_RULES = tag_rules.FF_ENCODER_TAG_RULES
+FF_LOG_TAG_RULES = tag_rules.FF_LOG_TAG_RULES
+RESOLUTION_TAGS = tag_rules.RESOLUTION_TAGS
+calculate_resolution = tag_rules.calculate_resolution
+contains_keywords = tag_rules.contains_keywords
+deal_with_m = tag_rules.deal_with_m
+match_keyword_rules = tag_rules.match_keyword_rules
+remove_exponent = tag_rules.remove_exponent
+tag_c = tag_rules.tag_c
+tag_ff_encoder = tag_rules.tag_ff_encoder
+tag_ff_frame_rate = tag_rules.tag_ff_frame_rate
+tag_ff_log = tag_rules.tag_ff_log
+tag_ff_resolution = tag_rules.tag_ff_resolution
+tag_l = tag_rules.tag_l
+tag_m = tag_rules.tag_m
 
 
 def is_formatted_file_name(filename):
@@ -60,79 +59,15 @@ def is_formatted_file_name(filename):
     return bool(re.match(r"^\d{8}-\d{6}_.*_\d{4}", filename))
 
 
-def contains_keywords(text, keywords):
-    if text is None:
-        return False
-    return any(keyword.lower() in text.lower() for keyword in keywords)
+def generated_original_id(file_name):
+    return original_id_details(file_name)["value"]
 
 
-def live_photo_match_image(folder_path, filter_num):
-    return _live_photo_image_lookup(folder_path).get(filter_num)
-
-
-@cache
-def _live_photo_mov_lookup(folder_path):
-    """Build a 4-digit-num -> mov_file_path lookup for Live Photo pairing.
-
-    Key is the 4-digit number extracted from the MOV filename (e.g. '1234'
-    from 'IMG_1234.MOV'). Only MOV files with Live Photo metadata are included;
-    here we match by filename pattern and leave metadata check to the caller.
-    """
-    pattern = re.compile(r"(\d{4})\.mov$", re.IGNORECASE)
-    lookup = {}
-    for file_name in sorted(glob.glob(os.path.join(folder_path, "*"))):
-        match = pattern.search(os.path.basename(file_name))
-        if match is None:
-            continue
-        lookup.setdefault(match.group(1), file_name)
-    return lookup
-
-
-def live_photo_match_mov(folder_path, filter_num):
-    """Return the Live Photo MOV path whose 4-digit number matches *filter_num*."""
-    return _live_photo_mov_lookup(folder_path).get(filter_num)
-
-
-@cache
-def _sony_xml_lookup_by_video_stem(folder_path):
-    """Build a video_stem -> [xml_file_path, ...] lookup for SONY XML pairing.
-
-    Key is the video file stem (uppercased). Each video may have multiple XML
-    sidecar files (M01, M02, …), so the value is a list.
-    """
-    lookup = {}
-    for file_name in sorted(glob.glob(os.path.join(folder_path, "*"))):
-        base = os.path.basename(file_name)
-        result = sony_xml_video_stem(base)
-        if result is None:
-            continue
-        video_stem, _ = result
-        lookup.setdefault(video_stem.upper(), []).append(file_name)
-    return lookup
-
-
-def sony_xml_match_xmls(folder_path, video_file):
-    """Return list of SONY XML sidecar paths that pair with *video_file*.
-
-    Matching is done by video stem so it works for both original filenames
-    (e.g. C0212.MP4 → C0212M01.XML) and already-formatted names
-    (e.g. 20240101-120000_…_0212.MP4 → 20240101-120000_…_0212M01.XML).
-    """
-    video_stem = os.path.splitext(os.path.basename(video_file))[0]
-    return _sony_xml_lookup_by_video_stem(folder_path).get(video_stem.upper(), [])
-
-
-@cache
-def _live_photo_image_lookup(folder_path):
-    pattern_str = rf"(\d{{4}})\.({'|'.join(IMAGE_EXT_LIST)})$".replace(" ", "")
-    pattern = re.compile(pattern_str, re.IGNORECASE)
-    lookup = {}
-    for file_name in sorted(glob.glob(os.path.join(folder_path, "*"))):
-        match = pattern.search(file_name)
-        if match is None:
-            continue
-        lookup.setdefault(match.group(1), file_name)
-    return lookup
+def original_id_details(file_name):
+    original_id = file_number(file_name)
+    if original_id is not None:
+        return {"value": original_id, "source": "filename"}
+    return {"value": content_fingerprint_id(file_name), "source": "content_fingerprint"}
 
 
 def file_number(file_name, try_hash=False):
@@ -148,170 +83,33 @@ def file_number(file_name, try_hash=False):
         return num_str if len(num_str) == 4 else None
     if try_hash is False:
         return None
-    hex_dig = get_md5(file_name)
-    decimal_dig = int(hex_dig, 16)
-    str_digits = f"{decimal_dig}"
-    last_four_digits_str = str_digits[-4:]
-    return last_four_digits_str if len(last_four_digits_str) == 4 else None
-
-
-MAKE_MODEL_TAG_RULES = [
-    (["Apple", "iPhone"], "iPh"),
-    (["iPad"], "iPad"),
-    (["xiaomi", "mi"], "MI"),
-    (["SONY", "ILCE", "ILME", "ZV-E", "ZV-1", "RX"], "SON"),
-    (["CANON"], "CAN"),
-    (["NIKON"], "NIK"),
-    (["casio"], "CAS"),
-    (["GoPro", "HERO10", "HERO9"], "GoP"),
-    (["ZTE"], "ZTE"),
-    (["FUJIFILM"], "FUJ"),
-    (["Nokia"], "Nokia"),
-    (["HUAWEI"], "HUAWEI"),
-    (["Smartisan"], "Smartisan"),
-    (["Yiruikecorp"], "Yiruikecorp"),
-    (["OnePlus"], "OnePlus"),
-    (["vivo"], "vivo"),
-    (["DJI"], "DJI"),
-    (["Hasselblad"], "Hasselblad"),
-    (["nubia"], "Nubia"),
-]
-
-FF_ENCODER_TAG_RULES = [
-    (["h.264", "h264", "avc", "x264", "AVC Coding"], "AVC"),
-    (["h.265", "h265", "hevc", "x265", "HEVC Coding"], "HEVC"),
-]
-
-FF_LOG_TAG_RULES = [(["DOVI"], "DOVI")]
-
-RESOLUTION_TAGS = {
-    (720, 480): "SD",
-    (1280, 720): "HD",
-    (1920, 1080): "FHD",
-    (2048, 1080): "2K",
-    (3840, 2160): "4K",
-    (7680, 4320): "8K",
-}
-
-
-def match_keyword_rules(value, rules):
-    for keywords, normalized_tag in rules:
-        if contains_keywords(value, keywords):
-            return normalized_tag
-    return None
-
-
-def deal_with_m(make_or_model):
-    normalized_tag = match_keyword_rules(make_or_model, MAKE_MODEL_TAG_RULES)
-    if normalized_tag is not None:
-        return "M" + normalized_tag
-    raise ValueError(f"convert failure: {make_or_model}")
-
-
-def tag_m(metadata):
-    make = metadata.get("Make", None)
-    if make is not None:
-        return deal_with_m(make)
-    model = metadata.get("Model", None)
-    if model is not None:
-        return deal_with_m(model)
-    device_model = metadata.get("DeviceModelName", None)
-    if device_model is not None:
-        return deal_with_m(device_model)
-    return None
-
-
-def tag_c(metadata):
-    tag = ""
-    comment = metadata.get("UserComment", None)
-    if contains_keywords(comment, ["Screenshot"]):
-        tag = tag + "S"
-    return "C" + tag if len(tag) > 0 else None
-
-
-def tag_l(metadata):
-    lens = metadata.get("LensID", None)
-    if lens is None:
-        return None
-    if contains_keywords(lens, ["front"]):
-        lens = "F"
-    else:
-        return None
-    return "L" + lens
-
-
-def calculate_resolution(width, height):
-    if width is None or height is None:
-        return None
-    return RESOLUTION_TAGS.get((width, height), f"{width}x{height}")
-
-
-def tag_ff_resolution(metadata):
-    video_stream = get_video_metadata_ff(metadata)
-    if video_stream is None:
-        return None
-    return calculate_resolution(video_stream.get("width", None), video_stream.get("height", None))
-
-
-def remove_exponent(num):
-    return num.to_integral() if num == num.to_integral() else num.normalize()
-
-
-def tag_ff_frame_rate(metadata):
-    video_stream = get_video_metadata_ff(metadata)
-    if video_stream is None:
-        return None
-    fps = video_stream.get("avg_frame_rate", None)
-    if fps is None:
-        return None
-    items = fps.split("/")
-    if items and len(items) == 2:
-        denominator = int(items[0])
-        numerator = int(items[1])
-        if numerator == 0:
-            return None
-        result = denominator / numerator
-        result = Decimal(f"{result}").quantize(Decimal("0.00"))
-        result = remove_exponent(result)
-        return f"{result}FPS"
-    return None
-
-
-def tag_ff_log(metadata):
-    video_stream = get_video_metadata_ff(metadata)
-    if video_stream is None:
-        return None
-    side_list = video_stream.get("side_data_list", None)
-    if not side_list:
-        return None
-    for side_data in side_list:
-        data_type = side_data.get("side_data_type", None)
-        result = match_keyword_rules(data_type, FF_LOG_TAG_RULES)
-        if result is not None:
-            return result
-    return None
-
-
-def tag_ff_encoder(metadata):
-    video_stream = get_video_metadata_ff(metadata)
-    if video_stream is None:
-        return None
-    tags = video_stream.get("tags", None)
-    if tags is None:
-        return None
-    encoder = tags.get("encoder", None)
-    if encoder is None:
-        return None
-    normalized_tag = match_keyword_rules(encoder, FF_ENCODER_TAG_RULES)
-    if normalized_tag is not None:
-        return normalized_tag
-    formatted_encoder = encoder.strip()
-    if len(formatted_encoder) > 0:
-        raise ValueError(f"encoder convert failure: {encoder}")
-    return None
+    return content_fingerprint_id(file_name)
 
 
 def formatted_tags(filename, options=None):
+    options = options or RenameOptions()
+    context = ensure_file_context(filename)
+    device = formatted_device_unit(context, options)
+    tech = formatted_tech_tags(context, options)
+    tags = [tag for tag in (device, tech) if tag is not None]
+    return "-".join(tags) if len(tags) > 0 else None
+
+
+def formatted_device_unit(filename, options=None):
+    options = options or RenameOptions()
+    context = ensure_file_context(filename)
+    metadata = context.exif_metadata
+    if metadata is None:
+        return None
+    device = tag_m(metadata)
+    if device is None:
+        if options.loose is False:
+            logging.error(f"[exiftool] make is invalid: {context.file_path}")
+        return None
+    return format_device_unit(context, device)
+
+
+def formatted_tech_tags(filename, options=None):
     options = options or RenameOptions()
     context = ensure_file_context(filename)
     if context.is_image:
@@ -319,6 +117,76 @@ def formatted_tags(filename, options=None):
     if context.is_video:
         return formatted_tags_vid(context, options)
     return None
+
+
+def filename_field_details(filename, options=None):
+    options = options or RenameOptions()
+    context = ensure_file_context(filename)
+    details = {
+        "required": {
+            "date": None,
+            "device_unit": None,
+            "original_id": None,
+            "original_id_source": None,
+        },
+        "optional": {
+            "tech_tags": None,
+            "missing": [],
+        },
+        "missing_required": [],
+    }
+
+    date = context.media_date
+    if date is not None and options.time_offset_minutes is not None:
+        date = apply_time_offset_to_date(date, options.time_offset_minutes)
+    formatted = formatted_date(date) if date is not None else None
+    if formatted is None:
+        details["missing_required"].append("date")
+    else:
+        details["required"]["date"] = formatted
+
+    device = formatted_device_unit(context, options)
+    if device is None:
+        details["missing_required"].append("device_unit")
+    else:
+        details["required"]["device_unit"] = device
+
+    original_id = original_id_details(context.file_path)
+    if original_id["value"] is None:
+        details["missing_required"].append("original_id")
+    else:
+        details["required"]["original_id"] = original_id["value"]
+        details["required"]["original_id_source"] = original_id["source"]
+
+    tech_tags = formatted_tech_tags(context, options)
+    details["optional"]["tech_tags"] = tech_tags
+    details["optional"]["missing"] = missing_optional_fields(context, tech_tags)
+    return details
+
+
+def missing_optional_fields(filename, tech_tags=None):
+    context = ensure_file_context(filename)
+    if not context.is_video:
+        return []
+    if context.ffprobe_metadata is None:
+        return ["tech_tags"]
+
+    missing = []
+    if tag_ff_resolution(context.ffprobe_metadata) is None:
+        missing.append("resolution")
+    if tag_ff_frame_rate(context.ffprobe_metadata) is None:
+        missing.append("frame_rate")
+    if tag_ff_log(context.ffprobe_metadata) is None:
+        missing.append("log")
+    try:
+        encoder = tag_ff_encoder(context.ffprobe_metadata)
+    except ValueError:
+        encoder = None
+    if encoder is None:
+        missing.append("codec")
+    if tech_tags is None and not missing:
+        missing.append("tech_tags")
+    return missing
 
 
 def formatted_tags_vid(file_or_context, options=None):
@@ -332,13 +200,6 @@ def formatted_tags_vid(file_or_context, options=None):
     if metadata is None:
         return None
     tags = []
-    make = tag_m(metadata)
-    if make is None:
-        if options.loose is False:
-            logging.error(f"[exiftool] make is invalid: {file_path}")
-            return None
-    else:
-        tags.append(make)
     resolution = tag_ff_resolution(metadata_ff)
     if resolution is None:
         logging.error(f"[ffmpeg] resolution is invalid: {file_path}")
@@ -366,22 +227,14 @@ def formatted_tags_vid(file_or_context, options=None):
 
 def formatted_tags_img(filename):
     context = ensure_file_context(filename)
-    file_path = context.file_path
     metadata = context.exif_metadata
     if metadata is None:
         return None
     tags = []
-    make = tag_m(metadata)
-    if make is not None:
-        tags.append(make)
-    else:
-        logging.warning(f"[exiftool] make is invalid: {file_path}")
-    lens = tag_l(metadata)
-    if lens is not None:
-        tags.append(lens)
     comment = tag_c(metadata)
     if comment is not None:
         tags.append(comment)
+    tags = filter_image_tech_tags(context, tags)
     return "-".join(tags) if len(tags) > 0 else None
 
 
@@ -451,14 +304,17 @@ def generate_new_filename_prefix(
     if formatted is None:
         return None
     items.append(formatted)
-    tags = formatted_tags(context, options)
-    if tags is None:
+    device = formatted_device_unit(context, options)
+    if device is None:
         if options.loose is False:
-            logging.error(f"tags is invalid: {obj}")
+            logging.error(f"device is invalid: {obj}")
             return None
     else:
-        items.append(tags)
-    number = file_number(context.file_path, True)
+        items.append(device)
+    tech_tags = formatted_tech_tags(context, options)
+    if tech_tags is not None:
+        items.append(tech_tags)
+    number = generated_original_id(context.file_path)
     if number is None:
         logging.error(f"number is invalid: {obj}")
         return None

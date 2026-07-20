@@ -22,26 +22,70 @@
 程序会读取媒体文件的元数据，并尝试生成统一格式的新文件名。重命名时会综合以下信息：
 
 - 拍摄时间
-- 设备品牌或型号
-- 镜头信息（部分图片）
-- 截图标记（部分图片）
+- 具体设备或素材来源
+- 品牌相关标记（例如 iPhone 自拍、iPhone 截屏）
 - 视频分辨率
 - 视频帧率
 - 视频编码信息
-- 文件编号或基于 MD5 生成的编号
+- 原始文件编号或内容指纹
 
-生成后的文件名大致类似：
+生成后的文件名使用以下格式：
 
 ```text
-20230512-114211_MiPh-FHD-30FPS_2348.HEIC
+YYYYMMDD-HHMMSS_DeviceOrUnit_TechTags_OriginalId.ext
 ```
 
 其中通常包含：
 
 - `20230512-114211`：格式化后的拍摄时间
-- `MiPh-FHD-30FPS`：设备和媒体标签
-- `2348`：四位编号
+- `DeviceOrUnit`：具体设备或素材来源
+- `TechTags`：可选的媒体技术标签
+- `OriginalId`：稳定标识，用于回链原始素材
 - `.HEIC`：原始扩展名
+
+示例：
+
+```text
+20240102-030405_iPhone15Pro-Selfie_1234.HEIC
+20240102-030405_iPhone15Pro-Screenshot_1234.PNG
+20240102-030405_iPhone15Pro_FHD-29.97FPS-AVC_7657.MOV
+20240101-120000_MSON_4K-25FPS-AVC_0212.MP4
+20240101-120000_MSON_4K-25FPS-AVC_0212M01.XML
+20240102-030405_MSON_FHD-25FPS-AVC_4827.MOV
+```
+
+字段说明：
+
+| 字段 | 含义 |
+|---|---|
+| `YYYYMMDD-HHMMSS` | 从媒体元数据读取的拍摄时间 |
+| `DeviceOrUnit` | 设备或素材来源，例如 `iPhone15Pro`、`iPhone15Pro-Selfie`、`iPhone15Pro-Screenshot`、`MSON`、`DJI` |
+| `TechTags` | 可选技术标签，例如分辨率、帧率、Log/HDR 标记、视频编码；无技术标签时会省略 |
+| `OriginalId` | 稳定标识，用于判断或追踪是否来自同一份原始素材 |
+| `ext` | 原始文件扩展名 |
+
+`OriginalId` 的生成顺序：
+
+1. 优先使用原始文件名中的 4 位编号，例如 `IMG_1234`、`C0212`、`DJI_0008`。
+2. 如果文件名中没有这类编号，则根据内容指纹生成稳定的 4 位数字编号。
+
+内容指纹用于在缺少原始编号时提供稳定标识。小文件会完整 hash；
+大视频文件不会完整读取，而是结合文件大小以及文件开头和结尾的采样内容生成指纹。
+文件名中会统一表现为 4 位数字；`rename-plan.json` 的字段详情会记录
+`original_id_source`，用于区分编号来自原始文件名还是内容指纹。
+
+预览阶段生成的 `rename-plan.json` 会记录每个文件的字段解析详情：
+
+- `required`：必需字段，包括拍摄时间、设备或素材来源、稳定标识
+- `optional`：可选字段，包括技术标签以及缺失的可选字段列表
+- `missing_required`：缺失的必需字段；这类文件会被跳过
+- sidecar 文件会额外记录 `sidecar_rule` 和 `paired_with`，用于说明它来自哪条品牌规则，以及跟随哪一个主文件
+
+控制台的 plan 汇总也会显示可选字段缺失数量，例如：
+
+```text
+- optional missing: log=12, codec=3
+```
 
 ### 2. Live Photo 关联处理
 

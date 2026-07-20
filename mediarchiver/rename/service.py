@@ -4,18 +4,17 @@ import os
 from tqdm import tqdm
 
 from mediarchiver.common.reporting import OperationLogger
-from mediarchiver.common.tool import FILE_EXT_LIST, is_sony_xml, sony_xml_video_stem
+from mediarchiver.common.tool import FILE_EXT_LIST, is_sony_xml
 from mediarchiver.common.workers import map_with_workers, resolve_worker_count
+from mediarchiver.rename.brand_rules import find_sidecar_renames
 from mediarchiver.rename.metadata import build_file_metadata_context, get_context_load_error
 from mediarchiver.rename.options import RenameOptions
 from mediarchiver.rename.plan import RENAME_PLAN_VERSION, RenamePlan, RenamePlanItem
 from mediarchiver.rename.rules import (
-    file_number,
+    filename_field_details,
     generate_new_filename,
     is_formatted_file_name,
-    live_photo_match_mov,
     need_ignore_file,
-    sony_xml_match_xmls,
 )
 
 MAX_CONTEXT_PREFETCH_WORKERS = 4
@@ -52,15 +51,19 @@ def _is_prefetch_candidate(folder_path, obj):
     return True
 
 
-def _append_sidecar_plan_item(
-    items, planned_destinations, planned_sources, source_path, destination_path
-):
+def _append_sidecar_plan_item(items, planned_destinations, planned_sources, sidecar):
     """Append a sidecar file (XML / Live Photo MOV) plan item, handling conflicts.
 
     Records the source in *planned_sources* regardless of outcome so the main
     loop skips it when iterating over the directory listing.
     Returns True if the item was appended as ready, False otherwise.
     """
+    source_path = sidecar.source
+    destination_path = sidecar.destination
+    details = {
+        "sidecar_rule": sidecar.rule_name,
+        "paired_with": sidecar.paired_with,
+    }
     planned_sources.add(source_path)
 
     if source_path == destination_path:
@@ -71,6 +74,7 @@ def _append_sidecar_plan_item(
                 action="rename",
                 status="skipped",
                 reason="already_formatted",
+                details=details,
             )
         )
         return False
@@ -87,6 +91,7 @@ def _append_sidecar_plan_item(
                 action="rename",
                 status="conflict",
                 reason="destination_exists",
+                details=details,
             )
         )
         return False
@@ -110,7 +115,7 @@ def _append_sidecar_plan_item(
                 action="rename",
                 status="conflict",
                 reason="destination_duplicated_in_plan",
-                details={"duplicate_with": existing_item.source},
+                details=_merge_details(details, {"duplicate_with": existing_item.source}),
             )
         )
         return False
@@ -121,10 +126,15 @@ def _append_sidecar_plan_item(
             destination=destination_path,
             action="rename",
             status="ready",
+            details=details,
         )
     )
     planned_destinations[destination_path] = len(items) - 1
     return True
+
+
+def _merge_details(details, extra):
+    return {**(details or {}), **extra}
 
 
 def build_rename_plan(source, options=None, workers=None):
@@ -193,18 +203,21 @@ def build_rename_plan(source, options=None, workers=None):
                 )
                 continue
 
+            field_details = filename_field_details(file_context, options=options)
             new_file_name = generate_new_filename(
                 file_context,
                 options=options,
             )
             if new_file_name is None:
+                missing_required = field_details.get("missing_required") or []
                 items.append(
                     RenamePlanItem(
                         source=file_path,
                         destination=None,
                         action="rename",
                         status="skipped",
-                        reason="rule_rejected",
+                        reason="missing_required_field" if missing_required else "rule_rejected",
+                        details=field_details,
                     )
                 )
                 continue
@@ -217,7 +230,7 @@ def build_rename_plan(source, options=None, workers=None):
                         action="rename",
                         status="invalid",
                         reason="invalid_generated_name",
-                        details={"generated_name": new_file_name},
+                        details=_merge_details(field_details, {"generated_name": new_file_name}),
                     )
                 )
                 continue
@@ -233,6 +246,7 @@ def build_rename_plan(source, options=None, workers=None):
                         action="rename",
                         status="skipped",
                         reason="already_formatted",
+                        details=field_details,
                     )
                 )
             elif os.path.exists(new_file_path):
@@ -244,6 +258,7 @@ def build_rename_plan(source, options=None, workers=None):
                         action="rename",
                         status="conflict",
                         reason="destination_exists",
+                        details=field_details,
                     )
                 )
                 continue
@@ -270,7 +285,10 @@ def build_rename_plan(source, options=None, workers=None):
                             action="rename",
                             status="conflict",
                             reason="destination_duplicated_in_plan",
-                            details={"duplicate_with": existing_item.source},
+                            details=_merge_details(
+                                field_details,
+                                {"duplicate_with": existing_item.source},
+                            ),
                         )
                     )
                     continue
@@ -281,32 +299,18 @@ def build_rename_plan(source, options=None, workers=None):
                         destination=new_file_path,
                         action="rename",
                         status="ready",
+                        details=field_details,
                     )
                 )
                 planned_destinations[new_file_path] = len(items) - 1
 
-            if file_context.is_video:
-                new_file_name_stem = os.path.splitext(new_file_name)[0]
-                for xml_path in sony_xml_match_xmls(source_dir, file_path):
-                    _, xml_suffix = sony_xml_video_stem(os.path.basename(xml_path))
-                    new_xml_path = os.path.join(source_dir, new_file_name_stem + xml_suffix)
-                    _append_sidecar_plan_item(
-                        items, planned_destinations, planned_sources, xml_path, new_xml_path
-                    )
-
-            if file_context.is_image:
-                new_file_name_stem = os.path.splitext(new_file_name)[0]
-                img_num = file_number(file_path)
-                if img_num is not None:
-                    mov_path = live_photo_match_mov(source_dir, img_num)
-                    if mov_path is not None:
-                        new_mov_path = os.path.join(
-                            source_dir,
-                            new_file_name_stem + os.path.splitext(mov_path)[1],
-                        )
-                        _append_sidecar_plan_item(
-                            items, planned_destinations, planned_sources, mov_path, new_mov_path
-                        )
+            for sidecar in find_sidecar_renames(source_dir, file_context, new_file_name):
+                _append_sidecar_plan_item(
+                    items,
+                    planned_destinations,
+                    planned_sources,
+                    sidecar,
+                )
         except Exception as exc:
             logging.exception("build rename plan failed: %s", file_path)
             items.append(

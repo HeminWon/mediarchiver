@@ -43,12 +43,17 @@ class RenamePlan:
     @property
     def summary(self):
         counters = Counter(item.status for item in self.items)
+        optional_missing = Counter()
+        for item in self.items:
+            missing = item.details.get("optional", {}).get("missing", [])
+            optional_missing.update(missing)
         return {
             "total": len(self.items),
             "ready": counters.get("ready", 0),
             "skipped": counters.get("skipped", 0),
             "conflict": counters.get("conflict", 0),
             "invalid": counters.get("invalid", 0),
+            "optional_missing": dict(optional_missing),
         }
 
     def to_dict(self):
