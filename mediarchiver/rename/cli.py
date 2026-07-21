@@ -16,6 +16,7 @@ from mediarchiver.common.external import (
 from mediarchiver.common.logging_utils import configure_logging
 from mediarchiver.rename.plan import write_rename_plan
 from mediarchiver.rename.registry import list_rules
+from mediarchiver.rename.reports import print_issue_summary, write_issue_jsonl
 from mediarchiver.rename.service import apply_rename_plan, build_rename_plan
 
 DEFAULT_PLAN_FILENAME = "rename-plan.json"
@@ -149,6 +150,8 @@ def run_with_args(args):
     write_rename_plan(plan, plan_path)
     print_preview(plan)
     print_plan_summary("rename", plan.summary)
+    issue_jsonl_path = write_issue_jsonl(plan)
+    print_issue_summary(plan, issue_jsonl_path)
 
     if not args.apply:
         print()

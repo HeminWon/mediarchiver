@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mediarchiver"
-version = "0.1.1"
+version = "0.1.2"
 description = "Media rename and archive CLI powered by Exif metadata"
 readme = "README.md"
 license = { text = "MIT" }

@@ -3,6 +3,7 @@ from decimal import Decimal, InvalidOperation
 
 from mediarchiver.rename.metadata import FileMetadataContext
 from mediarchiver.rename.naming import first_formatted_metadata_date
+from mediarchiver.rename.original_id import fallback_original_id
 from mediarchiver.rename.plan import RenamePlanItem
 from mediarchiver.rename.rule_builder import RenameRuleError
 from mediarchiver.rename.rule_builder import build_media_plan_item as build_standard_media_plan_item
@@ -33,7 +34,7 @@ def build_media_plan_item(source_dir: str, context: FileMetadataContext) -> Rena
 def build_new_file_name(context: FileMetadataContext):
     date, date_source = format_required_date(context)
     device_unit, device_source = device_unit_from_metadata(context)
-    original_id, original_id_source = extract_original_id(context.file_name)
+    original_id, original_id_source = fallback_original_id(context.file_path)
     tech_tags = build_tech_tags(context)
     parts = [date, device_unit]
     if tech_tags:
@@ -86,18 +87,9 @@ def device_unit_from_metadata(context: FileMetadataContext):
     raise RenameRuleError("invalid_device_model", {"file_name": context.file_name})
 
 
-def extract_original_id(file_name: str):
-    match = re.search(r"(?:IMG|IMG_E|DSC|DSCF|PXL)[_-]?(\d{4})", file_name, re.IGNORECASE)
-    if match:
-        return match.group(1), "filename"
-    raise RenameRuleError("missing_original_id", {"file_name": file_name})
-
-
 def build_tech_tags(context: FileMetadataContext):
     tags = []
     metadata = context.exif_metadata or {}
-    if is_screenshot(context):
-        tags.append("Screenshot")
     if is_selfie(metadata):
         tags.append("Selfie")
     if is_hdr(metadata):
@@ -107,13 +99,6 @@ def build_tech_tags(context: FileMetadataContext):
     if context.is_video:
         tags.extend(video_tech_tags(context))
     return "-".join(tags) or None
-
-
-def is_screenshot(context: FileMetadataContext):
-    metadata = context.exif_metadata or {}
-    file_name = context.file_name.lower()
-    user_comment = str(metadata.get("UserComment", "")).lower()
-    return file_name.startswith(("screenshot", "screen shot")) or "screenshot" in user_comment
 
 
 def is_selfie(metadata: dict):

@@ -6,6 +6,7 @@ from pathlib import Path
 from mediarchiver.common.tool import is_img, is_vid
 from mediarchiver.rename.metadata import FileMetadataContext
 from mediarchiver.rename.naming import first_formatted_metadata_date
+from mediarchiver.rename.original_id import fallback_original_id
 from mediarchiver.rename.plan import RenamePlanItem
 from mediarchiver.rename.rule_builder import RenameRuleError
 from mediarchiver.rename.rule_builder import build_media_plan_item as build_standard_media_plan_item
@@ -111,7 +112,7 @@ def build_lrf_plan_item(
 
 def build_new_file_name(context: FileMetadataContext):
     date, date_source = format_required_date(context)
-    original_id = extract_original_id(context.file_name)
+    original_id, original_id_source = original_id_from_context(context)
     tech_tags = build_tech_tags(context)
     parts = [date, DEVICE_UNIT]
     if tech_tags:
@@ -124,7 +125,7 @@ def build_new_file_name(context: FileMetadataContext):
             "device_unit": DEVICE_UNIT,
             "device_unit_source": "rule",
             "original_id": original_id,
-            "original_id_source": "filename",
+            "original_id_source": original_id_source,
         },
         "optional": {
             "tech_tags": tech_tags,
@@ -156,7 +157,14 @@ def extract_original_id(file_name: str):
     match = re.search(r"_(\d{4})_", file_name)
     if not match:
         raise RenameRuleError("missing_original_id", {"file_name": file_name})
-    return match.group(1)
+    return match.group(1), "filename:dji_underscore"
+
+
+def original_id_from_context(context: FileMetadataContext):
+    try:
+        return extract_original_id(context.file_name)
+    except RenameRuleError:
+        return fallback_original_id(context.file_path)
 
 
 def build_tech_tags(context: FileMetadataContext):

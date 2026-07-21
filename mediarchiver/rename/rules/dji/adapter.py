@@ -14,6 +14,7 @@ class DjiPocket4PRule:
     id = "dji:pocket4p"
     label = "DJI Pocket 4P"
     description = "Strict DJI Pocket 4P media rename rule"
+    priority = 50
     required_tools = ("exiftool", "ffprobe")
 
     def __init__(self):

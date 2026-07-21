@@ -43,6 +43,7 @@ class RenameRule(Protocol):
     id: str
     label: str
     description: str
+    priority: int
     required_tools: tuple[str, ...]
 
     def collect_files(self, source_dir: str, include_formatted: bool = False) -> RuleFileSet:
@@ -73,7 +74,9 @@ def normalize_rule_plan_item(item: RenamePlanItem, rule: RenameRule) -> RenamePl
 def normalize_rule_details(details, rule: RenameRule):
     normalized = dict(details or {})
     normalized["rule"] = rule.id
+    normalized["rule_brand"] = rule_brand(rule)
     normalized["rule_label"] = rule.label
+    normalized["rule_priority"] = rule_priority(rule)
     if "rule_match" in normalized:
         normalized["rule_match"] = list(normalized["rule_match"] or [])
 
@@ -81,6 +84,14 @@ def normalize_rule_details(details, rule: RenameRule):
     if isinstance(required, dict):
         normalized["required"] = dict(required)
     return normalized
+
+
+def rule_brand(rule: RenameRule):
+    return rule.id.split(":", 1)[0]
+
+
+def rule_priority(rule: RenameRule):
+    return int(getattr(rule, "priority", 0))
 
 
 def validate_rule_plan_item(

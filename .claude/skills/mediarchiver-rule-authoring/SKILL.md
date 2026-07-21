@@ -123,10 +123,13 @@ description: 在本仓库中根据 mediarchiver rename 预览结果和用户指�
 
    ```text
    apple:iphone
+   apple:screenshot
    dji:pocket4p
    sony:a7m4
    gopro:hero13
    ```
+
+   同品牌内可以使用 `priority` 表达更具体规则的优先级；自动模式下同一文件命中同品牌多个 ready rule 时，只保留唯一最高 `priority` 的结果。跨品牌多命中仍然应保留为 conflict，不要用 priority 静默覆盖。
 
 5. 保持 rule-first 分层。
 

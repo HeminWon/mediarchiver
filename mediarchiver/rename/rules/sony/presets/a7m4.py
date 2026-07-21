@@ -5,6 +5,7 @@ from pathlib import Path
 
 from mediarchiver.rename.metadata import FileMetadataContext
 from mediarchiver.rename.naming import formatted_date
+from mediarchiver.rename.original_id import fallback_original_id
 from mediarchiver.rename.plan import RenamePlanItem
 from mediarchiver.rename.rule_builder import RenameRuleError
 from mediarchiver.rename.rule_builder import build_media_plan_item as build_standard_media_plan_item
@@ -51,7 +52,7 @@ def build_media_plan_item(source_dir: str, context: FileMetadataContext) -> Rena
 def build_xml_plan_item(
     file_path: str,
     primary_items_by_id: dict[str, RenamePlanItem],
-) -> RenamePlanItem:
+    ) -> RenamePlanItem:
     source_path = Path(file_path)
     original_id = extract_xml_original_id(source_path.name)
     details = {
@@ -114,7 +115,7 @@ def build_xml_plan_item(
 
 def build_new_file_name(context: FileMetadataContext):
     date, date_source = format_required_date(context)
-    original_id, original_id_source = extract_original_id(context.file_name)
+    original_id, original_id_source = original_id_from_context(context)
     tech_tags = build_tech_tags(context)
     parts = [date, DEVICE_UNIT]
     if tech_tags:
@@ -149,7 +150,14 @@ def extract_original_id(file_name: str):
     match = re.match(r"C(\d{4})\.(?:MP4|MOV)$", file_name, re.IGNORECASE)
     if not match:
         raise RenameRuleError("missing_original_id", {"file_name": file_name})
-    return match.group(1), "filename"
+    return match.group(1), "filename:sony_clip"
+
+
+def original_id_from_context(context: FileMetadataContext):
+    try:
+        return extract_original_id(context.file_name)
+    except RenameRuleError:
+        return fallback_original_id(context.file_path)
 
 
 def extract_xml_original_id(file_name: str):

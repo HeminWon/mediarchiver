@@ -13,7 +13,12 @@ from mediarchiver.rename.rule import normalize_rule_plan_item
 
 MAX_CONTEXT_PREFETCH_WORKERS = 4
 DEFAULT_RENAME_PLAN_FILENAME = "rename-plan.json"
-IGNORED_SOURCE_NAMES = {DEFAULT_RENAME_PLAN_FILENAME, "rename.log", "archived.log"}
+IGNORED_SOURCE_NAMES = {
+    DEFAULT_RENAME_PLAN_FILENAME,
+    "rename.log",
+    "rename_operations.jsonl",
+    "archived.log",
+}
 
 
 def get_prefetch_workers(item_count, requested_workers=None):
@@ -64,6 +69,8 @@ def build_rename_plan(
             if rule_id is None and item.reason == "rule_not_matched":
                 continue
             items.append(normalize_rule_plan_item(item, rule))
+    if rule_id is None:
+        items = select_highest_priority_same_brand_items(items)
     items.extend(
         build_unmatched_items(
             source_dir,
@@ -114,6 +121,39 @@ def build_unmatched_items(source_dir, items, rules, include_formatted=False):
             )
         )
     return unmatched_items
+
+
+def select_highest_priority_same_brand_items(items):
+    ready_by_source_brand = {}
+    for index, item in enumerate(items):
+        if item.status != "ready":
+            continue
+        rule_brand = item.details.get("rule_brand")
+        if not rule_brand:
+            continue
+        ready_by_source_brand.setdefault((item.source, rule_brand), []).append(index)
+
+    shadowed_indexes = set()
+    for indexes in ready_by_source_brand.values():
+        if len(indexes) <= 1:
+            continue
+        priorities = {
+            index: int(items[index].details.get("rule_priority", 0))
+            for index in indexes
+        }
+        highest_priority = max(priorities.values())
+        winners = [
+            index
+            for index, priority in priorities.items()
+            if priority == highest_priority
+        ]
+        if len(winners) != 1:
+            continue
+        shadowed_indexes.update(index for index in indexes if index not in winners)
+
+    if not shadowed_indexes:
+        return items
+    return [item for index, item in enumerate(items) if index not in shadowed_indexes]
 
 
 def build_already_formatted_items(source_dir, items):

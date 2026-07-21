@@ -16,6 +16,7 @@ class SonyA7M4Rule:
     id = "sony:a7m4"
     label = "Sony A7M4"
     description = "Sony A7M4 XAVC media rename rule"
+    priority = 50
     required_tools = ("exiftool", "ffprobe")
 
     def __init__(self):

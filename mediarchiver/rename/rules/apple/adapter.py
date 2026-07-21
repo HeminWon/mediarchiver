@@ -5,17 +5,14 @@ from mediarchiver.rename.metadata import FileMetadataContext
 from mediarchiver.rename.naming import is_formatted_file_name
 from mediarchiver.rename.plan import RenamePlanItem
 from mediarchiver.rename.rule import RuleFileSet
+from mediarchiver.rename.rules.apple.detectors import has_apple_marker, has_screenshot_marker
 from mediarchiver.rename.rules.apple.presets.iphone import PRESET as IPHONE_PRESET
+from mediarchiver.rename.rules.apple.presets.screenshot import PRESET as SCREENSHOT_PRESET
 
 
-class AppleIPhoneRule:
-    id = "apple:iphone"
-    label = "Apple iPhone"
-    description = "Apple iPhone media rename rule"
+class BaseAppleRule:
     required_tools = ("exiftool", "ffprobe")
-
-    def __init__(self):
-        self.preset = IPHONE_PRESET
+    preset = None
 
     def collect_files(self, source_dir: str, include_formatted: bool = False) -> RuleFileSet:
         media_paths = []
@@ -42,7 +39,7 @@ class AppleIPhoneRule:
         items = []
         for media_path in file_set.media_paths:
             context = contexts[media_path]
-            match_reasons = match_apple_iphone(context)
+            match_reasons = self.match(context)
             if not match_reasons:
                 items.append(
                     RenamePlanItem(
@@ -57,6 +54,31 @@ class AppleIPhoneRule:
                 continue
             items.append(self.preset.build_media_item(source_dir, context, match_reasons))
         return items
+
+    def match(self, context: FileMetadataContext) -> tuple[str, ...]:
+        raise NotImplementedError
+
+
+class AppleIPhoneRule(BaseAppleRule):
+    id = "apple:iphone"
+    label = "Apple iPhone"
+    description = "Apple iPhone media rename rule"
+    priority = 50
+    preset = IPHONE_PRESET
+
+    def match(self, context: FileMetadataContext) -> tuple[str, ...]:
+        return match_apple_iphone(context)
+
+
+class AppleScreenshotRule(BaseAppleRule):
+    id = "apple:screenshot"
+    label = "Apple Screenshot"
+    description = "Apple screenshot PNG rename rule"
+    priority = 100
+    preset = SCREENSHOT_PRESET
+
+    def match(self, context: FileMetadataContext) -> tuple[str, ...]:
+        return match_apple_screenshot(context)
 
 
 def match_apple_iphone(context: FileMetadataContext) -> tuple[str, ...]:
@@ -74,4 +96,17 @@ def match_apple_iphone(context: FileMetadataContext) -> tuple[str, ...]:
     return tuple(reasons) if any(reason.endswith("=iphone") for reason in reasons) else ()
 
 
-RULE = AppleIPhoneRule()
+def match_apple_screenshot(context: FileMetadataContext) -> tuple[str, ...]:
+    if is_apple_screenshot(context):
+        return ("metadata=apple_screenshot",)
+    return ()
+
+
+def is_apple_screenshot(context: FileMetadataContext) -> bool:
+    metadata = context.exif_metadata or {}
+    return context.extension.lower() == ".png" and has_screenshot_marker(
+        metadata
+    ) and has_apple_marker(metadata)
+
+
+RULES = (AppleIPhoneRule(), AppleScreenshotRule())
