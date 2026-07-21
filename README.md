@@ -31,6 +31,32 @@ brew install exiftool ffmpeg
 sudo apt install libimage-exiftool-perl ffmpeg
 ```
 
+## How It Works
+
+```mermaid
+flowchart TD
+    user["Media folder"] --> cli["mediarchiver CLI"]
+
+    cli --> rename["rename"]
+    cli --> archive["archive"]
+
+    rename --> rules["Registered rename rules"]
+    rules --> apple["Apple iPhone"]
+    rules --> dji["DJI Pocket 4P"]
+    rules --> sony["Sony A7M4"]
+    rename --> rename_meta["exiftool + ffprobe metadata"]
+    rename_meta --> rename_preview["Rename preview plan"]
+    rename_preview --> renamed["Renamed media when --apply is used"]
+
+    archive --> archive_meta["exiftool metadata"]
+    archive --> sidecars["Sidecar pairing"]
+    sidecars --> paired["Move paired XML / SRT / LRF / XMP files with media"]
+    archive_meta --> groups["Year / quarter / month groups"]
+    paired --> groups
+    groups --> archive_preview["Archive preview"]
+    archive_preview --> archived["Moved files when --apply is used"]
+```
+
 ## Usage
 
 Check the installed version:
