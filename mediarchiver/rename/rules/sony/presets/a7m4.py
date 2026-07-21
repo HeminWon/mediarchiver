@@ -152,7 +152,7 @@ def extract_original_id(file_name: str):
         return clip_match.group(1), "filename:sony_clip"
     photo_match = re.match(r"DSC(\d+)\.(?:ARW|JPE?G)$", file_name, re.IGNORECASE)
     if photo_match:
-        return photo_match.group(1), "filename:sony_photo"
+        return photo_match.group(1)[-4:], "filename:sony_photo"
     raise RenameRuleError("missing_original_id", {"file_name": file_name})
 
 
@@ -170,7 +170,7 @@ def extract_sidecar_info(file_name: str):
     photo_match = re.match(r"DSC(\d+)\.(XMP|ACR)$", file_name, re.IGNORECASE)
     if photo_match:
         sidecar_ext = photo_match.group(2).lower()
-        return photo_match.group(1), f"sony_{sidecar_ext}", f"photo_{sidecar_ext}"
+        return photo_match.group(1)[-4:], f"sony_{sidecar_ext}", f"photo_{sidecar_ext}"
     return None, "sony_sidecar", "unknown"
 
 

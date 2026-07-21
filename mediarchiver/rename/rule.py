@@ -1,3 +1,5 @@
+import os
+import re
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -14,6 +16,8 @@ MEDIA_REQUIRED_FIELDS = (
     "original_id_source",
 )
 SIDECAR_REQUIRED_FIELDS = ("sidecar_rule", "sidecar_type")
+DATE_PATTERN = re.compile(r"^\d{8}-\d{6}$")
+ORIGINAL_ID_PATTERN = re.compile(r"^\d{4}$")
 
 
 @dataclass(frozen=True)
@@ -107,6 +111,8 @@ def validate_rule_plan_item(
         raise_rule_contract_error(rule, item, "ready item must have destination")
     if item.status != "ready" and item.reason is None:
         raise_rule_contract_error(rule, item, "non-ready item must have reason")
+    if item.destination is not None:
+        validate_destination_file_name(item, rule)
 
     if "rule_match" in details and not all(
         isinstance(reason, str) for reason in details["rule_match"]
@@ -127,6 +133,13 @@ def validate_rule_plan_item(
         )
 
 
+def validate_destination_file_name(item: RenamePlanItem, rule: RenameRule) -> None:
+    file_name = os.path.basename(item.destination or "")
+    if " " in file_name:
+        raise_rule_contract_error(rule, item, "destination file name must not contain spaces")
+
+
+
 def validate_media_details(
     item: RenamePlanItem,
     details: dict[str, Any],
@@ -142,6 +155,18 @@ def validate_media_details(
             rule,
             item,
             f"media details.required missing: {', '.join(missing_required)}",
+        )
+    if DATE_PATTERN.fullmatch(str(required["date"])) is None:
+        raise_rule_contract_error(
+            rule,
+            item,
+            "media details.required.date must match YYYYMMDD-HHMMSS",
+        )
+    if ORIGINAL_ID_PATTERN.fullmatch(str(required["original_id"])) is None:
+        raise_rule_contract_error(
+            rule,
+            item,
+            "media details.required.original_id must be four digits",
         )
     if required["device_unit_source"] != "rule" and not str(
         required["device_unit_source"]
