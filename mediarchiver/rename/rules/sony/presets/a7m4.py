@@ -28,12 +28,12 @@ class SonyA7M4Preset:
         item.details["rule_match"] = list(match_reasons)
         return item
 
-    def build_xml_item(
+    def build_sidecar_item(
         self,
         file_path: str,
         primary_items_by_id: dict[str, RenamePlanItem],
     ) -> RenamePlanItem:
-        return build_xml_plan_item(file_path, primary_items_by_id)
+        return build_sidecar_plan_item(file_path, primary_items_by_id)
 
     def original_id_from_name(self, file_name: str):
         try:
@@ -49,15 +49,15 @@ def build_media_plan_item(source_dir: str, context: FileMetadataContext) -> Rena
     return build_standard_media_plan_item(source_dir, context, build_new_file_name)
 
 
-def build_xml_plan_item(
+def build_sidecar_plan_item(
     file_path: str,
     primary_items_by_id: dict[str, RenamePlanItem],
-    ) -> RenamePlanItem:
+) -> RenamePlanItem:
     source_path = Path(file_path)
-    original_id = extract_xml_original_id(source_path.name)
+    original_id, sidecar_rule, sidecar_type = extract_sidecar_info(source_path.name)
     details = {
-        "sidecar_rule": "sony_xml",
-        "sidecar_type": "non_real_time_metadata",
+        "sidecar_rule": sidecar_rule,
+        "sidecar_type": sidecar_type,
         "original_id": original_id,
         "original_id_source": "filename",
     }
@@ -116,7 +116,7 @@ def build_xml_plan_item(
 def build_new_file_name(context: FileMetadataContext):
     date, date_source = format_required_date(context)
     original_id, original_id_source = original_id_from_context(context)
-    tech_tags = build_tech_tags(context)
+    tech_tags = build_tech_tags(context) if context.is_video else ""
     parts = [date, DEVICE_UNIT]
     if tech_tags:
         parts.append(tech_tags)
@@ -147,10 +147,13 @@ def format_required_date(context: FileMetadataContext):
 
 
 def extract_original_id(file_name: str):
-    match = re.match(r"C(\d{4})\.(?:MP4|MOV)$", file_name, re.IGNORECASE)
-    if not match:
-        raise RenameRuleError("missing_original_id", {"file_name": file_name})
-    return match.group(1), "filename:sony_clip"
+    clip_match = re.match(r"C(\d{4})\.(?:MP4|MOV)$", file_name, re.IGNORECASE)
+    if clip_match:
+        return clip_match.group(1), "filename:sony_clip"
+    photo_match = re.match(r"DSC(\d+)\.(?:ARW|JPE?G)$", file_name, re.IGNORECASE)
+    if photo_match:
+        return photo_match.group(1), "filename:sony_photo"
+    raise RenameRuleError("missing_original_id", {"file_name": file_name})
 
 
 def original_id_from_context(context: FileMetadataContext):
@@ -160,11 +163,15 @@ def original_id_from_context(context: FileMetadataContext):
         return fallback_original_id(context.file_path)
 
 
-def extract_xml_original_id(file_name: str):
-    match = re.match(r"C(\d{4})M\d{2}\.XML$", file_name, re.IGNORECASE)
-    if not match:
-        return None
-    return match.group(1)
+def extract_sidecar_info(file_name: str):
+    xml_match = re.match(r"C(\d{4})M\d{2}\.XML$", file_name, re.IGNORECASE)
+    if xml_match:
+        return xml_match.group(1), "sony_xml", "non_real_time_metadata"
+    photo_match = re.match(r"DSC(\d+)\.(XMP|ACR)$", file_name, re.IGNORECASE)
+    if photo_match:
+        sidecar_ext = photo_match.group(2).lower()
+        return photo_match.group(1), f"sony_{sidecar_ext}", f"photo_{sidecar_ext}"
+    return None, "sony_sidecar", "unknown"
 
 
 def build_tech_tags(context: FileMetadataContext):
