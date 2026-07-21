@@ -14,68 +14,47 @@ from mediarchiver.common.external import (
     preflight_check_commands,
 )
 from mediarchiver.common.logging_utils import configure_logging
-from mediarchiver.common.tool import parse_time_offset
-from mediarchiver.common.workers import positive_int
-from mediarchiver.rename.options import RenameOptions
-from mediarchiver.rename.plan import export_rename_plan_shell, load_rename_plan, write_rename_plan
+from mediarchiver.rename.plan import write_rename_plan
+from mediarchiver.rename.registry import list_profiles
 from mediarchiver.rename.service import apply_rename_plan, build_rename_plan
 
 DEFAULT_PLAN_FILENAME = "rename-plan.json"
-DEFAULT_SHELL_FILENAME = "rename.sh"
+RENAME_USAGE = (
+    "%(prog)s <source> [--apply] [--output-plan PATH]\n"
+    "       %(prog)s --list-profiles"
+)
+RENAME_EPILOG = (
+    "Examples:\n"
+    "  mediarchiver rename --list-profiles\n"
+    "  mediarchiver rename <source>\n"
+    "  mediarchiver rename <source> --apply"
+)
 
 
 def configure_parser(parser):
-    parser.add_argument("source", nargs="?", type=str, help="source directory")
-    parser.add_argument("--plan", type=str, default=None, help="load rename plan from JSON file")
     parser.add_argument(
-        "--loose",
-        dest="loose",
+        "source",
+        nargs="?",
+        type=str,
+        help="source directory; required unless --list-profiles is used",
+    )
+    parser.add_argument(
+        "--list-profiles",
         action="store_true",
         default=False,
-        help="allow partial metadata tags",
+        help="list supported rename profiles",
     )
     parser.add_argument(
-        "--all",
-        dest="include_formatted",
+        "--apply",
         action="store_true",
         default=False,
-        help="include already formatted files",
+        help="apply ready renames; default is preview only",
     )
     parser.add_argument(
-        "--dry-run",
-        dest="dry_run",
-        action="store_true",
-        default=False,
-        help="preview rename actions without changing files",
-    )
-    parser.add_argument(
-        "--workers",
-        type=positive_int,
-        default=None,
-        help="metadata prefetch workers (default: auto)",
-    )
-    parser.add_argument(
-        "--time-offset",
-        dest="time_offset",
+        "--output-plan",
         type=str,
         default=None,
-        metavar="±HH:MM",
-        help="shift EXIF time by offset, e.g. +8:00, -5:30, +5:45",
-    )
-    parser.add_argument("--apply", action="store_true", default=False, help="apply rename actions")
-    parser.add_argument(
-        "--yes",
-        "-y",
-        dest="yes",
-        action="store_true",
-        default=False,
-        help="skip confirmation prompt before applying",
-    )
-    parser.add_argument(
-        "--shell",
-        action="store_true",
-        default=False,
-        help="export a shell script for ready actions",
+        help="write rename plan JSON file",
     )
     return parser
 
@@ -83,122 +62,108 @@ def configure_parser(parser):
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="mediarchiver rename",
-        description="Build or apply rename plans",
+        usage=RENAME_USAGE,
+        description="Build or apply profile-based rename plans",
+        epilog=RENAME_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     return configure_parser(parser)
 
 
 def register_subparser(subparsers):
-    parser = subparsers.add_parser("rename", help="build or apply rename plans")
+    parser = subparsers.add_parser(
+        "rename",
+        usage=RENAME_USAGE,
+        help="build or apply profile-based rename plans",
+        description="Build or apply profile-based rename plans",
+        epilog=RENAME_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     configure_parser(parser)
     parser.set_defaults(handler=handle_args, parser=parser)
     return parser
 
 
 def validate_args(parser, args):
-    if args.plan and args.source is not None:
-        parser.error("source is not allowed with --plan")
-    if not args.plan and args.source is None:
-        parser.error("source is required unless --plan is used")
-    if args.plan and (args.loose or args.include_formatted or args.workers is not None):
-        parser.error("scan options cannot be used with --plan")
-    if args.dry_run and not (args.apply or args.plan):
-        parser.error("--dry-run requires --apply or --plan")
-    if getattr(args, "time_offset", None) is not None:
-        try:
-            parse_time_offset(args.time_offset)
-        except ValueError as exc:
-            parser.error(str(exc))
+    if args.list_profiles:
+        return
+    if args.source is None:
+        parser.error(
+            "missing required source directory.\n\n"
+            "Preview example: mediarchiver rename <source>\n"
+            "List profiles:   mediarchiver rename --list-profiles"
+        )
 
 
-def _default_plan_path(source):
+def default_plan_path(source):
     return os.path.join(os.path.abspath(source), DEFAULT_PLAN_FILENAME)
 
 
-def _default_shell_path(base_path):
-    return os.path.join(os.path.dirname(os.path.abspath(base_path)), DEFAULT_SHELL_FILENAME)
+def print_profiles():
+    for profile in list_profiles():
+        print(f"{profile.id}\t{profile.label}\t{profile.description}")
+
+
+def print_preview(plan):
+    for item in plan.items:
+        if item.status == "ready":
+            print(os.path.basename(item.source))
+            print(f"  -> {os.path.basename(item.destination)}")
 
 
 def run_with_args(args):
-    if args.plan:
-        log_dir = os.path.dirname(os.path.abspath(args.plan))
-    else:
-        log_dir = os.path.abspath(args.source)
-    log_path = configure_logging(log_dir, "rename.log")
-    preflight_check_commands(["exiftool", "ffprobe"])
+    if args.list_profiles:
+        print_profiles()
+        return 0
 
-    if args.plan:
-        plan_path = os.path.abspath(args.plan)
-        shell_path = _default_shell_path(plan_path) if args.shell else None
-        print_run_header(
-            "rename",
-            {
-                "plan": plan_path,
-                "apply": args.apply,
-                "dry_run": args.dry_run,
-                "shell": shell_path,
-                "log": log_path,
-            },
-        )
-        plan = load_rename_plan(plan_path)
-        if shell_path is not None:
-            export_rename_plan_shell(plan, shell_path)
-        if args.apply or args.dry_run:
-            if args.apply and not args.dry_run and not getattr(args, "yes", False):
-                s = plan.summary
-                print(
-                    f"[rename] ready: {s['ready']} file(s), "
-                    f"skipped: {s['skipped']}, conflict: {s['conflict']}"
-                )
-                if not confirm_proceed("Apply rename?"):
-                    print("[rename] aborted.")
-                    return
-            summary = apply_rename_plan(plan, dry_run=args.dry_run)
-            print_run_summary("rename", summary)
-            return
-        print_plan_summary("rename", plan.summary)
-        return
-
-    options = RenameOptions(
-        loose=args.loose,
-        include_formatted=args.include_formatted,
-        time_offset_minutes=parse_time_offset(getattr(args, "time_offset", None)),
+    source_dir = os.path.abspath(args.source)
+    if not os.path.isdir(source_dir):
+        raise ValueError(f"source directory does not exist: {source_dir}")
+    profiles = list_profiles()
+    profile_ids = [profile.id for profile in profiles]
+    log_path = configure_logging(source_dir, "rename.log")
+    required_tools = sorted(
+        {tool for profile in profiles for tool in profile.required_tools}
     )
-    plan_path = _default_plan_path(args.source)
-    shell_path = _default_shell_path(plan_path) if args.shell else None
+    preflight_check_commands(required_tools)
+    output_plan = (
+        os.path.abspath(args.output_plan)
+        if args.output_plan
+        else default_plan_path(source_dir)
+    )
     print_run_header(
         "rename",
         {
-            "source": args.source,
-            "loose": options.loose,
-            "include_formatted": options.include_formatted,
-            "time_offset": getattr(args, "time_offset", None),
+            "source": source_dir,
+            "profiles": ", ".join(profile_ids),
             "apply": args.apply,
-            "dry_run": args.dry_run,
-            "workers": args.workers,
-            "plan": plan_path,
-            "shell": shell_path,
+            "plan": output_plan,
             "log": log_path,
         },
     )
-    plan = build_rename_plan(args.source, options, workers=args.workers)
-    if shell_path is not None:
-        export_rename_plan_shell(plan, shell_path)
-    if args.apply:
-        if not args.dry_run and not getattr(args, "yes", False):
-            s = plan.summary
-            print(
-                f"[rename] ready: {s['ready']} file(s), "
-                f"skipped: {s['skipped']}, conflict: {s['conflict']}"
-            )
-            if not confirm_proceed("Apply rename?"):
-                print("[rename] aborted.")
-                return
-        summary = apply_rename_plan(plan, dry_run=args.dry_run)
-        print_run_summary("rename", summary)
-        return
-    write_rename_plan(plan, plan_path)
+    plan = build_rename_plan(
+        source_dir,
+    )
+    write_rename_plan(plan, output_plan)
+    print_preview(plan)
     print_plan_summary("rename", plan.summary)
+
+    if not args.apply:
+        print()
+        print("Preview only. No files were renamed. Pass --apply to rename ready items.")
+        return 0
+
+    s = plan.summary
+    print(
+        f"[rename] ready: {s['ready']} file(s), "
+        f"skipped: {s['skipped']}, conflict: {s['conflict']}"
+    )
+    if not confirm_proceed("Apply rename?"):
+        print("[rename] aborted.")
+        return 0
+    summary = apply_rename_plan(plan, dry_run=False)
+    print_run_summary("rename", summary)
+    return 0
 
 
 def handle_args(args):
@@ -210,9 +175,12 @@ def handle_args(args):
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
-    validate_args(parser, args)
     try:
+        validate_args(parser, args)
         return run_with_args(args)
     except DependencyMissingError as exc:
         print(format_missing_dependency_message(exc.tool_name))
+        sys.exit(1)
+    except ValueError as exc:
+        print(f"Error: {exc}")
         sys.exit(1)

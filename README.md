@@ -15,35 +15,74 @@ brew install exiftool ffmpeg
 sudo apt install libimage-exiftool-perl ffmpeg
 ```
 
-## Installation
+## Development
 
-Install the latest version directly from GitHub:
+This project uses `uv` for Python environment and dependency management.
 
 ```bash
-pipx install "git+https://github.com/heminwon/mediarchiver.git"
+uv sync --extra dev
+uv run mediarchiver --help
 ```
 
-Install a specific version:
+Common development commands are available through `just`:
 
 ```bash
-pipx install "git+https://github.com/heminwon/mediarchiver.git@v0.1.0"
+just setup
+just check
+just smoke
+just binary
+just install-local
 ```
 
-Upgrade to the latest version:
+Build local distribution artifacts:
 
 ```bash
-pipx upgrade mediarchiver
+uv build
+```
+
+Build a local single-file CLI binary for the current platform:
+
+```bash
+just binary
+./dist/bin/mediarchiver --help
+```
+
+Install the binary to your user-local command directory:
+
+```bash
+just install-local
+mediarchiver --help
+```
+
+By default this installs to `~/.local/bin/mediarchiver`. Override the target
+directory when needed:
+
+```bash
+LOCAL_BIN=/usr/local/bin just install-local
+```
+
+The `just` recipes use a local uv cache and a PyPI mirror by default. Override the
+package index when needed:
+
+```bash
+UV_DEFAULT_INDEX=https://pypi.org/simple just binary
 ```
 
 ## Usage
 
-### Batch-specific metadata inspection
+### Profile Authoring Metadata Inspection
 
-For custom batch rename scripts, inspect representative files directly with `exiftool` and `ffprobe` as described in the project batch-rename skill.
+For profile-driven rules, inspect representative files directly with `exiftool` and `ffprobe` as described in the project profile-authoring skill.
 
 ### Rename
 
-Preview rename plan (no files are modified):
+List supported rename profiles:
+
+```bash
+mediarchiver rename --list-profiles
+```
+
+Preview a mixed-folder rename plan across all supported profiles (no files are modified):
 
 ```bash
 mediarchiver rename <source>
@@ -55,43 +94,10 @@ Apply renames:
 mediarchiver rename <source> --apply
 ```
 
-Dry run (execute all logic but skip actual file writes):
+Write a plan to a custom path:
 
 ```bash
-mediarchiver rename <source> --apply --dry-run
-```
-
-Include already-formatted files:
-
-```bash
-mediarchiver rename <source> --all
-```
-
-Control metadata read concurrency:
-
-```bash
-mediarchiver rename <source> --workers 2
-```
-
-Correct a camera clock offset:
-
-```bash
-mediarchiver rename <source> --time-offset +8:00
-```
-
-Export rename operations as a shell script:
-
-```bash
-mediarchiver rename <source> --shell
-```
-
-Work with an existing plan file:
-
-```bash
-mediarchiver rename --plan rename-plan.json
-mediarchiver rename --plan rename-plan.json --apply
-mediarchiver rename --plan rename-plan.json --dry-run
-mediarchiver rename --plan rename-plan.json --shell
+mediarchiver rename <source> --output-plan /tmp/rename-plan.json
 ```
 
 ### Archive
@@ -114,7 +120,6 @@ mediarchiver archive <source> --to <target> --workers 2
 | `rename.log` | Rename workflow log |
 | `archived.log` | Archive workflow log |
 | `rename-plan.json` | Rename plan written into the source directory |
-| `rename.sh` | Optional shell script export |
 | `rename_operations.jsonl` | Structured rename operation records |
 | `rename_conflicts.jsonl` | Rename conflict records |
 | `archive_operations.jsonl` | Structured archive operation records |

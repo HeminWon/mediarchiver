@@ -70,9 +70,12 @@ def register_subparser(subparsers):
 
 
 def run_with_args(args):
+    source_dir = os.path.abspath(args.source)
+    if not os.path.isdir(source_dir):
+        raise ValueError(f"source directory does not exist: {source_dir}")
     destination = args.to if args.to else args.source
     by = getattr(args, "by", "quarter")
-    log_path = configure_logging(os.path.abspath(args.source), "archived.log")
+    log_path = configure_logging(source_dir, "archived.log")
     preflight_check_commands(["exiftool"])
     print_run_header(
         "archive",

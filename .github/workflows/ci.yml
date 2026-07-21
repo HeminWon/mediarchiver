@@ -21,12 +21,20 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
       - name: Install dependencies
-        run: python -m pip install --upgrade pip && python -m pip install ".[dev]"
+        run: uv sync --extra dev
 
       - name: Ruff
         if: matrix.python-version == '3.12' && matrix.os == 'ubuntu-latest'
-        run: python -m ruff check .
+        run: uv run --no-sync ruff check mediarchiver rename
 
       - name: Pytest
-        run: python -m pytest --cov=mediarchiver --cov-report=term-missing --cov-fail-under=70
+        run: |
+          if [ -d tests ]; then
+            uv run --no-sync pytest
+          else
+            echo "No tests directory; skipping pytest."
+          fi

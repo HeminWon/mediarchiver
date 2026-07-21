@@ -4,20 +4,14 @@ import os
 from tqdm import tqdm
 
 from mediarchiver.common.reporting import OperationLogger
-from mediarchiver.common.tool import FILE_EXT_LIST, is_sony_xml
 from mediarchiver.common.workers import map_with_workers, resolve_worker_count
-from mediarchiver.rename.brand_rules import find_sidecar_renames
-from mediarchiver.rename.metadata import build_file_metadata_context, get_context_load_error
-from mediarchiver.rename.options import RenameOptions
+from mediarchiver.rename.metadata import build_file_metadata_context
 from mediarchiver.rename.plan import RENAME_PLAN_VERSION, RenamePlan, RenamePlanItem
-from mediarchiver.rename.rules import (
-    filename_field_details,
-    generate_new_filename,
-    is_formatted_file_name,
-    need_ignore_file,
-)
+from mediarchiver.rename.registry import get_profile, list_profiles
+from mediarchiver.rename.rules import is_formatted_file_name
 
 MAX_CONTEXT_PREFETCH_WORKERS = 4
+DEFAULT_RENAME_PLAN_FILENAME = "rename-plan.json"
 
 
 def get_prefetch_workers(item_count, requested_workers=None):
@@ -38,305 +32,165 @@ def prefetch_file_contexts(file_paths, workers=None):
     )
 
 
-def _is_prefetch_candidate(folder_path, obj):
-    """快速判断是否需要 prefetch metadata，不涉及 is_live_photo_video 检查。"""
-    file_path = os.path.join(folder_path, obj)
-    if os.path.isdir(file_path):
-        return False
-    if is_sony_xml(obj):
-        return False
-    _, ext = os.path.splitext(obj)
-    if ext[1:].lower() not in FILE_EXT_LIST:
-        return False
-    return True
-
-
-def _append_sidecar_plan_item(items, planned_destinations, planned_sources, sidecar):
-    """Append a sidecar file (XML / Live Photo MOV) plan item, handling conflicts.
-
-    Records the source in *planned_sources* regardless of outcome so the main
-    loop skips it when iterating over the directory listing.
-    Returns True if the item was appended as ready, False otherwise.
-    """
-    source_path = sidecar.source
-    destination_path = sidecar.destination
-    details = {
-        "sidecar_rule": sidecar.rule_name,
-        "paired_with": sidecar.paired_with,
-    }
-    planned_sources.add(source_path)
-
-    if source_path == destination_path:
-        items.append(
-            RenamePlanItem(
-                source=source_path,
-                destination=destination_path,
-                action="rename",
-                status="skipped",
-                reason="already_formatted",
-                details=details,
-            )
-        )
-        return False
-
-    if os.path.exists(destination_path):
-        logging.warning(
-            f"File already exists, can not rename "
-            f"{os.path.basename(source_path)} => {os.path.basename(destination_path)}"
-        )
-        items.append(
-            RenamePlanItem(
-                source=source_path,
-                destination=destination_path,
-                action="rename",
-                status="conflict",
-                reason="destination_exists",
-                details=details,
-            )
-        )
-        return False
-
-    existing_index = planned_destinations.get(destination_path)
-    if existing_index is not None:
-        existing_item = items[existing_index]
-        if existing_item.status == "ready":
-            items[existing_index] = RenamePlanItem(
-                source=existing_item.source,
-                destination=existing_item.destination,
-                action=existing_item.action,
-                status="conflict",
-                reason="destination_duplicated_in_plan",
-                details={**existing_item.details, "duplicate_with": source_path},
-            )
-        items.append(
-            RenamePlanItem(
-                source=source_path,
-                destination=destination_path,
-                action="rename",
-                status="conflict",
-                reason="destination_duplicated_in_plan",
-                details=_merge_details(details, {"duplicate_with": existing_item.source}),
-            )
-        )
-        return False
-
-    items.append(
-        RenamePlanItem(
-            source=source_path,
-            destination=destination_path,
-            action="rename",
-            status="ready",
-            details=details,
-        )
-    )
-    planned_destinations[destination_path] = len(items) - 1
-    return True
-
-
-def _merge_details(details, extra):
-    return {**(details or {}), **extra}
-
-
-def build_rename_plan(source, options=None, workers=None):
-    options = options or RenameOptions()
+def build_rename_plan(
+    source,
+    profile_id=None,
+    workers=None,
+    include_formatted=False,
+):
     source_dir = os.path.abspath(source)
     if not os.path.isdir(source_dir):
         raise ValueError(f"source directory does not exist: {source_dir}")
-    try:
-        objects = sorted(os.listdir(source_dir))
-    except PermissionError as exc:
-        raise PermissionError(f"cannot read source directory: {source_dir}") from exc
 
-    # Prefetch all candidate media files (including MOV) so that
-    # is_live_photo_video is available before the main loop runs.
-    context_cache = prefetch_file_contexts(
-        [
-            os.path.join(source_dir, obj)
-            for obj in objects
-            if _is_prefetch_candidate(source_dir, obj)
-        ],
-        workers=workers,
+    profiles = select_profiles(profile_id)
+    file_sets = [
+        (profile, profile.collect_files(source_dir, include_formatted=include_formatted))
+        for profile in profiles
+    ]
+    media_paths = sorted(
+        {
+            media_path
+            for _, file_set in file_sets
+            for media_path in file_set.media_paths
+        }
     )
-
-    def get_file_context(file_path):
-        context = context_cache.get(file_path)
-        if context is None:
-            context = build_file_metadata_context(file_path)
-            context_cache[file_path] = context
-        return context
-
+    contexts = prefetch_file_contexts(media_paths, workers=workers)
     items = []
-    planned_destinations = {}
-    planned_sources = set()
-    process_objs = tqdm(objects)
-    for obj in process_objs:
-        process_objs.set_description("Planning " + obj)
-        file_path = os.path.join(source_dir, obj)
-        cached_context = context_cache.get(file_path)
-        if need_ignore_file(source_dir, obj, options, context=cached_context):
-            if file_path in planned_sources:
+    for profile, file_set in file_sets:
+        profile_items = profile.build_plan_items(source_dir, contexts, file_set)
+        for item in profile_items:
+            if profile_id is None and item.reason == "profile_not_matched":
                 continue
-            items.append(
-                RenamePlanItem(
-                    source=file_path,
-                    destination=None,
-                    action="rename",
-                    status="skipped",
-                    reason="ignored",
-                )
-            )
-            continue
-
-        try:
-            file_context = get_file_context(file_path)
-            load_error = get_context_load_error(file_context)
-            if load_error is not None:
-                items.append(
-                    RenamePlanItem(
-                        source=file_path,
-                        destination=None,
-                        action="rename",
-                        status="skipped",
-                        reason=load_error["reason"],
-                        details=load_error["details"],
-                    )
-                )
-                continue
-
-            field_details = filename_field_details(file_context, options=options)
-            new_file_name = generate_new_filename(
-                file_context,
-                options=options,
-            )
-            if new_file_name is None:
-                missing_required = field_details.get("missing_required") or []
-                items.append(
-                    RenamePlanItem(
-                        source=file_path,
-                        destination=None,
-                        action="rename",
-                        status="skipped",
-                        reason="missing_required_field" if missing_required else "rule_rejected",
-                        details=field_details,
-                    )
-                )
-                continue
-            if is_formatted_file_name(new_file_name) is False:
-                logging.error(f"formated file name is error: {obj} => {new_file_name}")
-                items.append(
-                    RenamePlanItem(
-                        source=file_path,
-                        destination=None,
-                        action="rename",
-                        status="invalid",
-                        reason="invalid_generated_name",
-                        details=_merge_details(field_details, {"generated_name": new_file_name}),
-                    )
-                )
-                continue
-
-            new_file_path = os.path.join(source_dir, new_file_name)
-            if new_file_path == file_path:
-                # Source and destination are the same: file is already correctly
-                # named. Mark as skipped but still process its sidecars below.
-                items.append(
-                    RenamePlanItem(
-                        source=file_path,
-                        destination=new_file_path,
-                        action="rename",
-                        status="skipped",
-                        reason="already_formatted",
-                        details=field_details,
-                    )
-                )
-            elif os.path.exists(new_file_path):
-                logging.warning(f"File already exists, can not rename {obj} => {new_file_name}")
-                items.append(
-                    RenamePlanItem(
-                        source=file_path,
-                        destination=new_file_path,
-                        action="rename",
-                        status="conflict",
-                        reason="destination_exists",
-                        details=field_details,
-                    )
-                )
-                continue
-            else:
-                existing_index = planned_destinations.get(new_file_path)
-                if existing_index is not None:
-                    existing_item = items[existing_index]
-                    if existing_item.status == "ready":
-                        items[existing_index] = RenamePlanItem(
-                            source=existing_item.source,
-                            destination=existing_item.destination,
-                            action=existing_item.action,
-                            status="conflict",
-                            reason="destination_duplicated_in_plan",
-                            details={
-                                **existing_item.details,
-                                "duplicate_with": file_path,
-                            },
-                        )
-                    items.append(
-                        RenamePlanItem(
-                            source=file_path,
-                            destination=new_file_path,
-                            action="rename",
-                            status="conflict",
-                            reason="destination_duplicated_in_plan",
-                            details=_merge_details(
-                                field_details,
-                                {"duplicate_with": existing_item.source},
-                            ),
-                        )
-                    )
-                    continue
-
-                items.append(
-                    RenamePlanItem(
-                        source=file_path,
-                        destination=new_file_path,
-                        action="rename",
-                        status="ready",
-                        details=field_details,
-                    )
-                )
-                planned_destinations[new_file_path] = len(items) - 1
-
-            for sidecar in find_sidecar_renames(source_dir, file_context, new_file_name):
-                _append_sidecar_plan_item(
-                    items,
-                    planned_destinations,
-                    planned_sources,
-                    sidecar,
-                )
-        except Exception as exc:
-            logging.exception("build rename plan failed: %s", file_path)
-            items.append(
-                RenamePlanItem(
-                    source=file_path,
-                    destination=None,
-                    action="rename",
-                    status="invalid",
-                    reason="rule_error",
-                    details={"message": str(exc)},
-                )
-            )
-    process_objs.close()
-
+            items.append(with_profile_details(item, profile))
+    items.extend(
+        build_unmatched_items(
+            source_dir,
+            items,
+            profiles,
+            include_formatted=include_formatted,
+        )
+    )
+    items = mark_source_profile_conflicts(items)
+    items = mark_destination_conflicts(items)
     return RenamePlan(
         version=RENAME_PLAN_VERSION,
         operation="rename",
         source_dir=source_dir,
         options={
-            "loose": options.loose,
-            "include_formatted": options.include_formatted,
-            "time_offset_minutes": options.time_offset_minutes,
+            "profile": profile_id or "auto",
+            "profiles": [profile.id for profile in profiles],
             "workers": workers,
+            "include_formatted": include_formatted,
         },
         items=items,
     )
+
+
+def select_profiles(profile_id=None):
+    if profile_id is not None:
+        return (get_profile(profile_id),)
+    return list_profiles()
+
+
+def with_profile_details(item, profile):
+    details = dict(item.details)
+    details.setdefault("profile", profile.id)
+    details.setdefault("profile_label", profile.label)
+    return RenamePlanItem(
+        source=item.source,
+        destination=item.destination,
+        action=item.action,
+        status=item.status,
+        reason=item.reason,
+        details=details,
+    )
+
+
+def build_unmatched_items(source_dir, items, profiles, include_formatted=False):
+    planned_sources = {item.source for item in items}
+    profile_ids = [profile.id for profile in profiles]
+    unmatched_items = []
+    for file_path in collect_source_files(source_dir, include_formatted=include_formatted):
+        if file_path in planned_sources:
+            continue
+        unmatched_items.append(
+            RenamePlanItem(
+                source=file_path,
+                destination=None,
+                action="rename",
+                status="skipped",
+                reason="no_matching_profile",
+                details={"profiles": profile_ids},
+            )
+        )
+    return unmatched_items
+
+
+def collect_source_files(source_dir, include_formatted=False):
+    ignored_names = {DEFAULT_RENAME_PLAN_FILENAME, "rename.log", "archived.log"}
+    file_paths = []
+    for name in sorted(os.listdir(source_dir)):
+        file_path = os.path.join(source_dir, name)
+        if not os.path.isfile(file_path):
+            continue
+        if name.startswith(".") or name in ignored_names:
+            continue
+        if not include_formatted and is_formatted_file_name(name):
+            continue
+        file_paths.append(file_path)
+    return file_paths
+
+
+def mark_source_profile_conflicts(items):
+    ready_by_source = {}
+    for index, item in enumerate(items):
+        if item.status == "ready":
+            ready_by_source.setdefault(item.source, []).append(index)
+
+    updated = list(items)
+    for indexes in ready_by_source.values():
+        if len(indexes) <= 1:
+            continue
+        profiles = [updated[index].details.get("profile") for index in indexes]
+        for index in indexes:
+            item = updated[index]
+            details = dict(item.details)
+            details["matched_profiles"] = profiles
+            updated[index] = RenamePlanItem(
+                source=item.source,
+                destination=item.destination,
+                action=item.action,
+                status="conflict",
+                reason="source_matched_multiple_profiles",
+                details=details,
+            )
+    return updated
+
+
+def mark_destination_conflicts(items):
+    ready_by_destination = {}
+    for index, item in enumerate(items):
+        if item.status == "ready" and item.destination is not None:
+            ready_by_destination.setdefault(item.destination, []).append(index)
+
+    updated = list(items)
+    for indexes in ready_by_destination.values():
+        if len(indexes) <= 1:
+            continue
+        duplicate_sources = [updated[index].source for index in indexes]
+        for index in indexes:
+            item = updated[index]
+            details = dict(item.details)
+            details["duplicate_sources"] = duplicate_sources
+            updated[index] = RenamePlanItem(
+                source=item.source,
+                destination=item.destination,
+                action=item.action,
+                status="conflict",
+                reason="destination_duplicated_in_plan",
+                details=details,
+            )
+    return updated
 
 
 def apply_rename_plan(plan, dry_run=False):
@@ -345,24 +199,14 @@ def apply_rename_plan(plan, dry_run=False):
     for item in process_items:
         process_items.set_description("Applying " + os.path.basename(item.source))
         if item.status != "ready":
-            if item.status == "conflict":
-                report_logger.record(
-                    "rename",
-                    item.source,
-                    destination=item.destination,
-                    status="conflict",
-                    reason=item.reason,
-                    details=item.details,
-                )
-            else:
-                report_logger.record(
-                    "rename",
-                    item.source,
-                    destination=item.destination,
-                    status="skipped",
-                    reason=item.reason,
-                    details=item.details,
-                )
+            report_logger.record(
+                "rename",
+                item.source,
+                destination=item.destination,
+                status="conflict" if item.status == "conflict" else "skipped",
+                reason=item.reason,
+                details=item.details,
+            )
             continue
 
         if item.destination is None:

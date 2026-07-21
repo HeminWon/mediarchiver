@@ -16,28 +16,6 @@ VIDEO_EXT_LIST = ["mp4", "m4v", "avi", "mov", "mpg"]
 IMAGE_EXT_LIST = ["jpg", "png", "bmp", "jpeg", "heic", "dng", "arw", "gif"]
 FILE_EXT_LIST = VIDEO_EXT_LIST + IMAGE_EXT_LIST
 
-SONY_XML_PATTERN = re.compile(r"^(.+)(M\d+\.XML)$", re.IGNORECASE)
-
-
-def is_sony_xml(filename):
-    """Return True if the file is a SONY sidecar XML (e.g. C0212M01.XML, C0212M02.XML)."""
-    return bool(SONY_XML_PATTERN.match(os.path.basename(filename)))
-
-
-def sony_xml_video_stem(filename):
-    """
-    Given a SONY XML filename, return (video_stem, suffix) tuple.
-    e.g. 'C0212M01.XML' -> ('C0212', 'M01.XML')
-         'C0212M02.XML' -> ('C0212', 'M02.XML')
-    Returns None if not a SONY XML file.
-    """
-    name = os.path.basename(filename)
-    match = SONY_XML_PATTERN.match(name)
-    if match:
-        return match.group(1), match.group(2)
-    return None
-
-
 def is_valid_date(text):
     if not isinstance(text, str) or len(text) == 0:
         return False
@@ -152,7 +130,7 @@ def get_media_date(filename):
 # device at the moment of capture), NOT UTC. This is intentional:
 #
 #   - DateTimeOriginal / CreateDate (EXIF): pure local time, no timezone suffix.
-#   - CreationDate (QuickTime/MP4, e.g. SONY): may carry a timezone suffix such as
+#   - CreationDate (QuickTime/MP4): may carry a timezone suffix such as
 #     "+09:00", but the datetime part itself is already local time. The suffix is
 #     stripped by apply_time_offset_to_date's regex, leaving the correct local time.
 #   - MediaCreateDate (QuickTime/MP4): stores UTC — deliberately ranked AFTER

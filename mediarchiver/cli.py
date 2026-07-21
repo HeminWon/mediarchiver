@@ -26,3 +26,6 @@ def main(argv=None):
     except DependencyMissingError as exc:
         print(format_missing_dependency_message(exc.tool_name))
         sys.exit(1)
+    except ValueError as exc:
+        print(f"Error: {exc}")
+        sys.exit(1)

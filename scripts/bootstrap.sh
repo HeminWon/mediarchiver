@@ -2,20 +2,18 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VENV_DIR="${ROOT_DIR}/.venv"
-PYTHON_BIN="${PYTHON:-python3}"
 
-if [[ ! -d "${VENV_DIR}" ]]; then
-  echo "[mediarchiver] Creating virtual environment at ${VENV_DIR}"
-  "${PYTHON_BIN}" -m venv "${VENV_DIR}"
-else
-  echo "[mediarchiver] Reusing existing virtual environment at ${VENV_DIR}"
+if ! command -v uv >/dev/null 2>&1; then
+  echo "Error: uv is required."
+  echo "Install: https://docs.astral.sh/uv/getting-started/installation/"
+  exit 1
 fi
 
-"${VENV_DIR}/bin/python" -m pip install -U pip
-"${VENV_DIR}/bin/python" -m pip install -e "${ROOT_DIR}"
+cd "${ROOT_DIR}"
+export UV_CACHE_DIR="${UV_CACHE_DIR:-${ROOT_DIR}/.uv-cache}"
+uv sync --extra dev
 
 echo ""
 echo "[mediarchiver] Setup complete."
-echo "Run: source .venv/bin/activate"
-echo "Run: mediarchiver rename --help"
+echo "Run: uv run mediarchiver rename --help"
+echo "Run: just check"

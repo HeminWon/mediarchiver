@@ -16,10 +16,10 @@ jobs:
         with:
           python-version: "3.12"
 
+      - uses: astral-sh/setup-uv@v6
+
       - name: Build wheel and sdist
-        run: |
-          pip install build
-          python -m build
+        run: uv build
 
       - uses: actions/upload-artifact@v4
         with:
@@ -27,7 +27,7 @@ jobs:
           path: dist/
           retention-days: 30
 
-  verify-pipx:
+  verify-cli:
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -40,17 +40,19 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install pipx and verify
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Install with uv tool and verify
         run: |
-          pip install pipx
-          pipx ensurepath
-          pipx install dist/mediarchiver-*.whl
+          uv tool install dist/mediarchiver-*.whl
+          export PATH="$HOME/.local/bin:$PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           mediarchiver --help
           mediarchiver rename --help
           mediarchiver archive --help
 
   create-release:
-    needs: verify-pipx
+    needs: verify-cli
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
