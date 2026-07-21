@@ -43,6 +43,12 @@ class RenamePlan:
     @property
     def summary(self):
         counters = Counter(item.status for item in self.items)
+        formatted_count = sum(
+            1
+            for item in self.items
+            if item.status == "skipped"
+            and item.reason in {"already_formatted", "already_named"}
+        )
         optional_missing = Counter()
         for item in self.items:
             missing = item.details.get("optional", {}).get("missing", [])
@@ -50,6 +56,7 @@ class RenamePlan:
         return {
             "total": len(self.items),
             "ready": counters.get("ready", 0),
+            "formatted": formatted_count,
             "skipped": counters.get("skipped", 0),
             "conflict": counters.get("conflict", 0),
             "invalid": counters.get("invalid", 0),

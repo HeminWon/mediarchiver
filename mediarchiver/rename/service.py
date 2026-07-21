@@ -13,6 +13,7 @@ from mediarchiver.rename.rule import normalize_rule_plan_item
 
 MAX_CONTEXT_PREFETCH_WORKERS = 4
 DEFAULT_RENAME_PLAN_FILENAME = "rename-plan.json"
+IGNORED_SOURCE_NAMES = {DEFAULT_RENAME_PLAN_FILENAME, "rename.log", "archived.log"}
 
 
 def get_prefetch_workers(item_count, requested_workers=None):
@@ -71,6 +72,8 @@ def build_rename_plan(
             include_formatted=include_formatted,
         )
     )
+    if not include_formatted:
+        items.extend(build_already_formatted_items(source_dir, items))
     items = mark_source_rule_conflicts(items)
     items = mark_destination_conflicts(items)
     return RenamePlan(
@@ -113,19 +116,54 @@ def build_unmatched_items(source_dir, items, rules, include_formatted=False):
     return unmatched_items
 
 
+def build_already_formatted_items(source_dir, items):
+    planned_sources = {item.source for item in items}
+    formatted_items = []
+    for file_path in collect_formatted_files(source_dir):
+        if file_path in planned_sources:
+            continue
+        formatted_items.append(
+            RenamePlanItem(
+                source=file_path,
+                destination=file_path,
+                action="rename",
+                status="skipped",
+                reason="already_formatted",
+                details={"formatted": True},
+            )
+        )
+    return formatted_items
+
+
 def collect_source_files(source_dir, include_formatted=False):
-    ignored_names = {DEFAULT_RENAME_PLAN_FILENAME, "rename.log", "archived.log"}
     file_paths = []
     for name in sorted(os.listdir(source_dir)):
         file_path = os.path.join(source_dir, name)
         if not os.path.isfile(file_path):
             continue
-        if name.startswith(".") or name in ignored_names:
+        if is_ignored_source_name(name):
             continue
         if not include_formatted and is_formatted_file_name(name):
             continue
         file_paths.append(file_path)
     return file_paths
+
+
+def collect_formatted_files(source_dir):
+    file_paths = []
+    for name in sorted(os.listdir(source_dir)):
+        file_path = os.path.join(source_dir, name)
+        if not os.path.isfile(file_path):
+            continue
+        if is_ignored_source_name(name):
+            continue
+        if is_formatted_file_name(name):
+            file_paths.append(file_path)
+    return file_paths
+
+
+def is_ignored_source_name(name):
+    return name.startswith(".") or name in IGNORED_SOURCE_NAMES
 
 
 def mark_source_rule_conflicts(items):

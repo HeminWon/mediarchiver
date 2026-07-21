@@ -46,6 +46,7 @@ def print_plan_summary(operation, summary):
         f"[{operation}] plan",
         f"- total: {summary.get('total', 0)}",
         f"- ready: {summary.get('ready', 0)}",
+        f"- formatted: {summary.get('formatted', 0)}",
         f"- skipped: {summary.get('skipped', 0)}",
         f"- conflict: {summary.get('conflict', 0)}",
         f"- invalid: {summary.get('invalid', 0)}",

@@ -158,7 +158,8 @@ def run_with_args(args):
     s = plan.summary
     print(
         f"[rename] ready: {s['ready']} file(s), "
-        f"skipped: {s['skipped']}, conflict: {s['conflict']}"
+        f"formatted: {s['formatted']}, skipped: {s['skipped']}, "
+        f"conflict: {s['conflict']}"
     )
     if not confirm_proceed("Apply rename?"):
         print("[rename] aborted.")
