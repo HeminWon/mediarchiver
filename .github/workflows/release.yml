@@ -14,7 +14,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
 
       - uses: astral-sh/setup-uv@v6
 
@@ -23,8 +23,62 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: dist-${{ github.sha }}
+          name: python-dist-${{ github.sha }}
           path: dist/
+          retention-days: 30
+
+  build-binaries:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Build single-file binary
+        run: |
+          uv run --extra dev pyinstaller \
+            --clean \
+            --noconfirm \
+            --onefile \
+            --name mediarchiver \
+            --hidden-import zlib \
+            --exclude-module multiprocessing \
+            --collect-submodules mediarchiver.rename.rules \
+            --distpath dist/bin \
+            --workpath build/pyinstaller \
+            --specpath build/pyinstaller \
+            mediarchiver/__main__.py
+
+      - name: Smoke binary
+        run: |
+          ./dist/bin/mediarchiver --version
+          ./dist/bin/mediarchiver rename --list-rules
+          ./dist/bin/mediarchiver archive --help
+
+      - name: Package binary
+        id: package
+        run: |
+          platform="$(uname -s | tr '[:upper:]' '[:lower:]')"
+          arch="$(uname -m)"
+          asset="mediarchiver-${platform}-${arch}"
+          mkdir -p dist/artifacts
+          cp dist/bin/mediarchiver dist/artifacts/mediarchiver
+          chmod +x dist/artifacts/mediarchiver
+          tar -C dist/artifacts -czf "dist/${asset}.tar.gz" mediarchiver
+          echo "asset=${asset}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ steps.package.outputs.asset }}-${{ github.sha }}
+          path: dist/*.tar.gz
           retention-days: 30
 
   verify-cli:
@@ -33,12 +87,12 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: dist-${{ github.sha }}
+          name: python-dist-${{ github.sha }}
           path: dist/
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
 
       - uses: astral-sh/setup-uv@v6
 
@@ -52,7 +106,7 @@ jobs:
           mediarchiver archive --help
 
   create-release:
-    needs: verify-cli
+    needs: [verify-cli, build-binaries]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
@@ -60,11 +114,12 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: dist-${{ github.sha }}
-          path: dist/
+          pattern: "*-${{ github.sha }}"
+          path: release-assets/
+          merge-multiple: true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          files: release-assets/*
           generate_release_notes: true

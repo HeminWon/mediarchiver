@@ -1,6 +1,5 @@
 import argparse
 import os
-from concurrent.futures import ThreadPoolExecutor
 
 from tqdm import tqdm
 
@@ -29,14 +28,7 @@ def map_with_workers(
 ):
     if not items:
         return {}
-    with ThreadPoolExecutor(
-        max_workers=resolve_worker_count(
-            len(items),
-            requested_workers=requested_workers,
-            default_max_workers=default_max_workers,
-        )
-    ) as executor:
-        results_iter = executor.map(func, items)
-        if progress_desc:
-            results_iter = tqdm(results_iter, total=len(items), desc=progress_desc)
-        return dict(zip(items, results_iter, strict=False))
+    results_iter = map(func, items)
+    if progress_desc:
+        results_iter = tqdm(results_iter, total=len(items), desc=progress_desc)
+    return dict(zip(items, results_iter, strict=False))

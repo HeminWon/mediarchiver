@@ -26,7 +26,7 @@ build:
     uv build
 
 binary:
-    uv run --extra dev pyinstaller --clean --noconfirm --onefile --name mediarchiver --hidden-import zlib --collect-submodules mediarchiver.rename.rules --distpath dist/bin --workpath build/pyinstaller --specpath build/pyinstaller mediarchiver/__main__.py
+    uv run --extra dev pyinstaller --clean --noconfirm --onefile --name mediarchiver --hidden-import zlib --exclude-module multiprocessing --collect-submodules mediarchiver.rename.rules --distpath dist/bin --workpath build/pyinstaller --specpath build/pyinstaller mediarchiver/__main__.py
 
 smoke-binary: binary
     ./dist/bin/mediarchiver --help
