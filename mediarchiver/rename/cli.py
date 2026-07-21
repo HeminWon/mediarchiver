@@ -140,8 +140,6 @@ def run_with_args(args):
             "source": source_dir,
             "rules": ", ".join(rule_ids),
             "apply": args.apply,
-            "plan": plan_path,
-            "log": log_path,
         },
     )
     plan = build_rename_plan(
@@ -150,6 +148,8 @@ def run_with_args(args):
     write_rename_plan(plan, plan_path)
     print_preview(plan)
     print_plan_summary("rename", plan.summary)
+    print(f"- plan: {plan_path}")
+    print(f"- log: {log_path}")
     issue_jsonl_path = write_issue_jsonl(plan)
     print_issue_summary(plan, issue_jsonl_path)
 
