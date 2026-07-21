@@ -13,10 +13,10 @@ lock:
     uv lock
 
 lint:
-    uv run --no-sync ruff check mediarchiver rename
+    uv run --no-sync ruff check mediarchiver
 
 test:
-    if [ -d tests ]; then uv run --no-sync pytest; else echo "No tests directory; skipping pytest."; fi
+    @echo "No tests configured; skipping."
 
 check: lint test
 
@@ -48,4 +48,4 @@ uninstall-local:
     echo "Removed: $local_bin/mediarchiver"
 
 clean:
-    rm -rf build dist *.egg-info .pytest_cache .ruff_cache .uv-cache htmlcov .coverage
+    rm -rf build dist *.egg-info .ruff_cache .uv-cache

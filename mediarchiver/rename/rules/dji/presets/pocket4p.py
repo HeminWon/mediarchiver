@@ -1,13 +1,14 @@
 import os
 import re
-from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from mediarchiver.common.tool import is_img, is_vid
-from mediarchiver.rename.metadata import FileMetadataContext, get_context_load_error
+from mediarchiver.rename.metadata import FileMetadataContext
+from mediarchiver.rename.naming import first_formatted_metadata_date
 from mediarchiver.rename.plan import RenamePlanItem
-from mediarchiver.rename.rules import formatted_date
+from mediarchiver.rename.rule_builder import RenameRuleError
+from mediarchiver.rename.rule_builder import build_media_plan_item as build_standard_media_plan_item
 
 DEVICE_UNIT = "DJI-Pocket4P"
 RESOLUTION_TAGS = {
@@ -15,15 +16,6 @@ RESOLUTION_TAGS = {
     (3840, 2160): "4K",
     (7680, 4320): "8K",
 }
-
-
-@dataclass(frozen=True)
-class RenameRuleError(ValueError):
-    reason: str
-    details: dict
-
-    def __str__(self):
-        return self.reason
 
 
 class Pocket4PPreset:
@@ -53,55 +45,7 @@ PRESET = Pocket4PPreset()
 
 
 def build_media_plan_item(source_dir: str, context: FileMetadataContext) -> RenamePlanItem:
-    load_error = get_context_load_error(context)
-    if load_error is not None:
-        return RenamePlanItem(
-            source=context.file_path,
-            destination=None,
-            action="rename",
-            status="skipped",
-            reason=load_error["reason"],
-            details=load_error.get("details") or {},
-        )
-
-    try:
-        new_file_name, details = build_new_file_name(context)
-    except RenameRuleError as exc:
-        return RenamePlanItem(
-            source=context.file_path,
-            destination=None,
-            action="rename",
-            status="invalid",
-            reason=exc.reason,
-            details=exc.details,
-        )
-
-    destination = os.path.join(source_dir, new_file_name)
-    if destination == context.file_path:
-        return RenamePlanItem(
-            source=context.file_path,
-            destination=destination,
-            action="rename",
-            status="skipped",
-            reason="already_named",
-            details=details,
-        )
-    if os.path.exists(destination):
-        return RenamePlanItem(
-            source=context.file_path,
-            destination=destination,
-            action="rename",
-            status="conflict",
-            reason="destination_exists",
-            details=details,
-        )
-    return RenamePlanItem(
-        source=context.file_path,
-        destination=destination,
-        action="rename",
-        status="ready",
-        details=details,
-    )
+    return build_standard_media_plan_item(source_dir, context, build_new_file_name)
 
 
 def build_lrf_plan_item(
@@ -194,11 +138,10 @@ def format_required_date(context: FileMetadataContext):
     if filename_date is not None:
         return filename_date, "filename"
 
-    media_date = context.media_date
-    formatted = formatted_date(media_date) if media_date else None
-    if formatted is None:
-        raise RenameRuleError("missing_date", {"media_date": media_date})
-    return formatted, "metadata"
+    date, date_source = first_formatted_metadata_date(context.exif_metadata)
+    if date is not None:
+        return date, date_source
+    raise RenameRuleError("missing_date", {"file_name": context.file_name})
 
 
 def date_from_dji_filename(file_name: str):

@@ -1,23 +1,15 @@
 import os
 import re
-from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from mediarchiver.rename.metadata import FileMetadataContext, get_context_load_error
+from mediarchiver.rename.metadata import FileMetadataContext
+from mediarchiver.rename.naming import formatted_date
 from mediarchiver.rename.plan import RenamePlanItem
-from mediarchiver.rename.rules import formatted_date
+from mediarchiver.rename.rule_builder import RenameRuleError
+from mediarchiver.rename.rule_builder import build_media_plan_item as build_standard_media_plan_item
 
 DEVICE_UNIT = "Sony-A7M4"
-
-
-@dataclass(frozen=True)
-class RenameRuleError(ValueError):
-    reason: str
-    details: dict
-
-    def __str__(self):
-        return self.reason
 
 
 class SonyA7M4Preset:
@@ -53,55 +45,7 @@ PRESET = SonyA7M4Preset()
 
 
 def build_media_plan_item(source_dir: str, context: FileMetadataContext) -> RenamePlanItem:
-    load_error = get_context_load_error(context)
-    if load_error is not None:
-        return RenamePlanItem(
-            source=context.file_path,
-            destination=None,
-            action="rename",
-            status="skipped",
-            reason=load_error["reason"],
-            details=load_error.get("details") or {},
-        )
-
-    try:
-        new_file_name, details = build_new_file_name(context)
-    except RenameRuleError as exc:
-        return RenamePlanItem(
-            source=context.file_path,
-            destination=None,
-            action="rename",
-            status="invalid",
-            reason=exc.reason,
-            details=exc.details,
-        )
-
-    destination = os.path.join(source_dir, new_file_name)
-    if destination == context.file_path:
-        return RenamePlanItem(
-            source=context.file_path,
-            destination=destination,
-            action="rename",
-            status="skipped",
-            reason="already_named",
-            details=details,
-        )
-    if os.path.exists(destination):
-        return RenamePlanItem(
-            source=context.file_path,
-            destination=destination,
-            action="rename",
-            status="conflict",
-            reason="destination_exists",
-            details=details,
-        )
-    return RenamePlanItem(
-        source=context.file_path,
-        destination=destination,
-        action="rename",
-        status="ready",
-        details=details,
-    )
+    return build_standard_media_plan_item(source_dir, context, build_new_file_name)
 
 
 def build_xml_plan_item(

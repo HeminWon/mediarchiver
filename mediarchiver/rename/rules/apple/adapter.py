@@ -2,9 +2,9 @@ import os
 
 from mediarchiver.common.tool import is_img, is_vid
 from mediarchiver.rename.metadata import FileMetadataContext
+from mediarchiver.rename.naming import is_formatted_file_name
 from mediarchiver.rename.plan import RenamePlanItem
 from mediarchiver.rename.rule import RuleFileSet
-from mediarchiver.rename.rules import is_formatted_file_name
 from mediarchiver.rename.rules.apple.presets.iphone import PRESET as IPHONE_PRESET
 
 
@@ -71,7 +71,7 @@ def match_apple_iphone(context: FileMetadataContext) -> tuple[str, ...]:
         reasons.append("model=iphone")
     if host.startswith("iphone"):
         reasons.append("host=iphone")
-    return tuple(reasons)
+    return tuple(reasons) if any(reason.endswith("=iphone") for reason in reasons) else ()
 
 
 RULE = AppleIPhoneRule()

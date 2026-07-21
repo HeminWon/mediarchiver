@@ -6,10 +6,10 @@ from tqdm import tqdm
 from mediarchiver.common.reporting import OperationLogger
 from mediarchiver.common.workers import map_with_workers, resolve_worker_count
 from mediarchiver.rename.metadata import build_file_metadata_context
+from mediarchiver.rename.naming import is_formatted_file_name
 from mediarchiver.rename.plan import RENAME_PLAN_VERSION, RenamePlan, RenamePlanItem
 from mediarchiver.rename.registry import get_rule, list_rules
 from mediarchiver.rename.rule import normalize_rule_plan_item
-from mediarchiver.rename.rules import is_formatted_file_name
 
 MAX_CONTEXT_PREFETCH_WORKERS = 4
 DEFAULT_RENAME_PLAN_FILENAME = "rename-plan.json"

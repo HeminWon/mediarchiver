@@ -12,7 +12,6 @@ description: 在本仓库中根据 mediarchiver rename 预览结果和用户指�
 - `mediarchiver rename` 是产品入口，规则沉淀到 `mediarchiver/rename/rules/`。
 - AI 先用现有产品命令生成 baseline plan，再分析用户指定素材的原始 `exiftool` / `ffprobe` 元数据，最后决定更新现有 rule 或新增 rule。
 - 默认只生成预览 plan，不执行真实重命名；只有用户明确要求并传入 `--apply` 才能执行。
-- 批次 standalone 脚本不是默认产物；只有用户明确要求“一次性脚本”时才生成到 `rename/`。
 - rules 必须按插件边界维护：品牌、机型、sidecar、字段来源、tech tag 映射都留在 rule 包内，公共层只负责发现、调用、合并和通用安全检查。
 
 ## 插件边界
@@ -24,6 +23,7 @@ description: 在本仓库中根据 mediarchiver rename 预览结果和用户指�
 - `registry.py` 自动发现 rule，不硬编码品牌或机型 import。
 - `service.py` 调用 rule、合并 plan、标记跨 rule 源文件冲突、目标冲突、未匹配文件。
 - `cli.py` 负责参数、预览输出、apply 入口和日志。
+- `naming.py`、`rule_builder.py` 提供命名格式、日期解析、标准 plan item 构造等 rule 协议工具。
 - `metadata.py`、`common/` 只提供通用工具读取、文件类型、日期解析、worker、日志、文件操作能力。
 
 不允许放进公共层的内容：
@@ -111,7 +111,7 @@ description: 在本仓库中根据 mediarchiver rename 预览结果和用户指�
    - 如果已有 rule 明显应该支持该素材，修正该 rule 的 detector / adapter / preset。
    - 如果是同品牌但不同机型或不同设备类型，新增同品牌下的新 rule。
    - 如果是新品牌，新增品牌目录，并在该目录的 `adapter.py` 暴露新 rule。
-   - 如果只是用户的一次性批次需求，且用户明确要求脚本，才进入 standalone 脚本例外流程。
+   - 不再新增一次性脚本；批次需求也优先沉淀为临时或正式 rule。
 
    只有当样本确实代表新的品牌、机型、设备类型或 sidecar 结构时，才新增 rule。rule id 使用：
 
@@ -148,8 +148,6 @@ description: 在本仓库中根据 mediarchiver rename 预览结果和用户指�
    - 具体品牌/机型字段来源留在对应 rule 内，不要放回全局通用规则。
    - `mediarchiver/rename/service.py` 只做薄分发、合并 plan、跨 rule 冲突检查。
    - `mediarchiver/rename/registry.py` 只做 rule 自动发现和重复 id 校验。
-   - 不要编辑冻结的 `rename/rename_dji_pocket4p.py`，除非用户明确要求。
-
 6. 实现后重新生成 plan，并和 baseline 对比。
 
    ```bash
@@ -324,19 +322,3 @@ tests/fixtures/metadata/<rule-id>/*.ffprobe.json
 - 不为了某个品牌在 registry/service/common 中增加定制分支。
 - 不为了让样本通过而降低 rule 匹配精度。
 - 不静默吞掉可见文件；无法匹配 rule 的文件应在 plan 里展示为 skipped。
-
-## standalone 脚本例外
-
-只有当用户明确要求生成一次性批次脚本时，才创建：
-
-```text
-rename/rename_<batch_or_device>.py
-```
-
-此类脚本仍必须：
-
-- 默认只预览；
-- 至少支持 `--apply`、`--output`；
-- 使用真实元数据来源；
-- 不覆盖文件；
-- 最终回复明确说明是否执行过真实重命名。

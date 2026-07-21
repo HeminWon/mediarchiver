@@ -3,9 +3,9 @@ import re
 
 from mediarchiver.common.tool import is_vid
 from mediarchiver.rename.metadata import FileMetadataContext
+from mediarchiver.rename.naming import is_formatted_file_name
 from mediarchiver.rename.plan import RenamePlanItem
 from mediarchiver.rename.rule import RuleFileSet
-from mediarchiver.rename.rules import is_formatted_file_name
 from mediarchiver.rename.rules.sony.presets.a7m4 import PRESET as A7M4_PRESET
 
 SONY_CLIP_PATTERN = re.compile(r"^C\d{4}\.(?:MP4|MOV)$", re.IGNORECASE)

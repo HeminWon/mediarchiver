@@ -1,20 +1,11 @@
-import os
 import re
-from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
-from mediarchiver.rename.metadata import FileMetadataContext, get_context_load_error
+from mediarchiver.rename.metadata import FileMetadataContext
+from mediarchiver.rename.naming import first_formatted_metadata_date
 from mediarchiver.rename.plan import RenamePlanItem
-from mediarchiver.rename.rules import formatted_date
-
-
-@dataclass(frozen=True)
-class RenameRuleError(ValueError):
-    reason: str
-    details: dict
-
-    def __str__(self):
-        return self.reason
+from mediarchiver.rename.rule_builder import RenameRuleError
+from mediarchiver.rename.rule_builder import build_media_plan_item as build_standard_media_plan_item
 
 
 class IPhonePreset:
@@ -36,55 +27,7 @@ PRESET = IPhonePreset()
 
 
 def build_media_plan_item(source_dir: str, context: FileMetadataContext) -> RenamePlanItem:
-    load_error = get_context_load_error(context)
-    if load_error is not None:
-        return RenamePlanItem(
-            source=context.file_path,
-            destination=None,
-            action="rename",
-            status="skipped",
-            reason=load_error["reason"],
-            details=load_error.get("details") or {},
-        )
-
-    try:
-        new_file_name, details = build_new_file_name(context)
-    except RenameRuleError as exc:
-        return RenamePlanItem(
-            source=context.file_path,
-            destination=None,
-            action="rename",
-            status="invalid",
-            reason=exc.reason,
-            details=exc.details,
-        )
-
-    destination = os.path.join(source_dir, new_file_name)
-    if destination == context.file_path:
-        return RenamePlanItem(
-            source=context.file_path,
-            destination=destination,
-            action="rename",
-            status="skipped",
-            reason="already_named",
-            details=details,
-        )
-    if os.path.exists(destination):
-        return RenamePlanItem(
-            source=context.file_path,
-            destination=destination,
-            action="rename",
-            status="conflict",
-            reason="destination_exists",
-            details=details,
-        )
-    return RenamePlanItem(
-        source=context.file_path,
-        destination=destination,
-        action="rename",
-        status="ready",
-        details=details,
-    )
+    return build_standard_media_plan_item(source_dir, context, build_new_file_name)
 
 
 def build_new_file_name(context: FileMetadataContext):
@@ -113,29 +56,34 @@ def build_new_file_name(context: FileMetadataContext):
 
 
 def format_required_date(context: FileMetadataContext):
-    metadata = context.exif_metadata or {}
-    for field in (
-        "SubSecDateTimeOriginal",
-        "DateTimeOriginal",
-        "CreateDate",
-        "DateCreated",
-        "CreationDate",
-    ):
-        formatted = formatted_date(metadata.get(field))
-        if formatted is not None:
-            return formatted, f"metadata:{field}"
+    date, date_source = first_formatted_metadata_date(
+        context.exif_metadata,
+        (
+            "SubSecDateTimeOriginal",
+            "DateTimeOriginal",
+            "CreateDate",
+            "DateCreated",
+            "CreationDate",
+        ),
+    )
+    if date is not None:
+        return date, date_source
     raise RenameRuleError("missing_date", {"file_name": context.file_name})
 
 
 def device_unit_from_metadata(context: FileMetadataContext):
     metadata = context.exif_metadata or {}
-    model = metadata.get("Model") or metadata.get("HostComputer")
-    if not model:
+    for field in ("Model", "HostComputer"):
+        model = metadata.get(field)
+        if not model:
+            continue
+        device_unit = re.sub(r"[^A-Za-z0-9]+", "", str(model).strip())
+        if not device_unit:
+            raise RenameRuleError("invalid_device_model", {"model": model})
+        return device_unit, f"metadata:{field}"
+    if not metadata.get("Model") and not metadata.get("HostComputer"):
         raise RenameRuleError("missing_device_model", {"file_name": context.file_name})
-    device_unit = re.sub(r"[^A-Za-z0-9]+", "", str(model).strip())
-    if not device_unit:
-        raise RenameRuleError("invalid_device_model", {"model": model})
-    return device_unit, "metadata:Model"
+    raise RenameRuleError("invalid_device_model", {"file_name": context.file_name})
 
 
 def extract_original_id(file_name: str):

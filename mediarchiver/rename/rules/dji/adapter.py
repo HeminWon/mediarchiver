@@ -2,9 +2,9 @@ import os
 from pathlib import Path
 
 from mediarchiver.rename.metadata import FileMetadataContext
+from mediarchiver.rename.naming import is_formatted_file_name
 from mediarchiver.rename.plan import RenamePlanItem
 from mediarchiver.rename.rule import RuleFileSet
-from mediarchiver.rename.rules import is_formatted_file_name
 from mediarchiver.rename.rules.dji.detectors.pocket import PocketDetector
 from mediarchiver.rename.rules.dji.presets.pocket4p import PRESET as POCKET4P_PRESET
 from mediarchiver.rename.rules.dji.presets.pocket4p import mark_destination_conflicts
