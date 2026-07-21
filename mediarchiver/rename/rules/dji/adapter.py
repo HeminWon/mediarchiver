@@ -3,24 +3,24 @@ from pathlib import Path
 
 from mediarchiver.rename.metadata import FileMetadataContext
 from mediarchiver.rename.plan import RenamePlanItem
-from mediarchiver.rename.profile import ProfileFileSet
-from mediarchiver.rename.profiles.dji.detectors.pocket import PocketDetector
-from mediarchiver.rename.profiles.dji.presets.pocket4p import PRESET as POCKET4P_PRESET
-from mediarchiver.rename.profiles.dji.presets.pocket4p import mark_destination_conflicts
+from mediarchiver.rename.rule import RuleFileSet
 from mediarchiver.rename.rules import is_formatted_file_name
+from mediarchiver.rename.rules.dji.detectors.pocket import PocketDetector
+from mediarchiver.rename.rules.dji.presets.pocket4p import PRESET as POCKET4P_PRESET
+from mediarchiver.rename.rules.dji.presets.pocket4p import mark_destination_conflicts
 
 
-class DjiPocket4PProfile:
+class DjiPocket4PRule:
     id = "dji:pocket4p"
     label = "DJI Pocket 4P"
-    description = "Strict DJI Pocket 4P media rename profile"
+    description = "Strict DJI Pocket 4P media rename rule"
     required_tools = ("exiftool", "ffprobe")
 
     def __init__(self):
         self.detector = PocketDetector()
         self.preset = POCKET4P_PRESET
 
-    def collect_files(self, source_dir: str, include_formatted: bool = False) -> ProfileFileSet:
+    def collect_files(self, source_dir: str, include_formatted: bool = False) -> RuleFileSet:
         media_paths = []
         sidecar_paths = []
         for name in sorted(os.listdir(source_dir)):
@@ -34,7 +34,7 @@ class DjiPocket4PProfile:
                 continue
             if self.detector.candidate_media_path(file_path):
                 media_paths.append(file_path)
-        return ProfileFileSet(
+        return RuleFileSet(
             source_dir=source_dir,
             media_paths=media_paths,
             sidecar_paths=sidecar_paths,
@@ -44,7 +44,7 @@ class DjiPocket4PProfile:
         self,
         source_dir: str,
         contexts: dict[str, FileMetadataContext],
-        file_set: ProfileFileSet,
+        file_set: RuleFileSet,
     ) -> list[RenamePlanItem]:
         items = []
         primary_items_by_stem = {}
@@ -58,8 +58,8 @@ class DjiPocket4PProfile:
                         destination=None,
                         action="rename",
                         status="skipped",
-                        reason="profile_not_matched",
-                        details={"profile": self.id},
+                        reason="rule_not_matched",
+                        details={"rule": self.id},
                     )
                 )
                 continue
@@ -74,4 +74,4 @@ class DjiPocket4PProfile:
         return mark_destination_conflicts(items)
 
 
-PROFILE = DjiPocket4PProfile()
+RULE = DjiPocket4PRule()

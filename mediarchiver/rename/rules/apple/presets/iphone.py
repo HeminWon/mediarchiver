@@ -28,7 +28,7 @@ class IPhonePreset:
         match_reasons: tuple[str, ...],
     ) -> RenamePlanItem:
         item = build_media_plan_item(source_dir, context)
-        item.details["profile_match"] = list(match_reasons)
+        item.details["rule_match"] = list(match_reasons)
         return item
 
 

@@ -1,0 +1,1 @@
+"""DJI rename rules."""

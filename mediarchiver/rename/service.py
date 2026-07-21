@@ -7,7 +7,8 @@ from mediarchiver.common.reporting import OperationLogger
 from mediarchiver.common.workers import map_with_workers, resolve_worker_count
 from mediarchiver.rename.metadata import build_file_metadata_context
 from mediarchiver.rename.plan import RENAME_PLAN_VERSION, RenamePlan, RenamePlanItem
-from mediarchiver.rename.registry import get_profile, list_profiles
+from mediarchiver.rename.registry import get_rule, list_rules
+from mediarchiver.rename.rule import normalize_rule_plan_item
 from mediarchiver.rename.rules import is_formatted_file_name
 
 MAX_CONTEXT_PREFETCH_WORKERS = 4
@@ -34,7 +35,7 @@ def prefetch_file_contexts(file_paths, workers=None):
 
 def build_rename_plan(
     source,
-    profile_id=None,
+    rule_id=None,
     workers=None,
     include_formatted=False,
 ):
@@ -42,10 +43,10 @@ def build_rename_plan(
     if not os.path.isdir(source_dir):
         raise ValueError(f"source directory does not exist: {source_dir}")
 
-    profiles = select_profiles(profile_id)
+    rules = select_rules(rule_id)
     file_sets = [
-        (profile, profile.collect_files(source_dir, include_formatted=include_formatted))
-        for profile in profiles
+        (rule, rule.collect_files(source_dir, include_formatted=include_formatted))
+        for rule in rules
     ]
     media_paths = sorted(
         {
@@ -56,29 +57,29 @@ def build_rename_plan(
     )
     contexts = prefetch_file_contexts(media_paths, workers=workers)
     items = []
-    for profile, file_set in file_sets:
-        profile_items = profile.build_plan_items(source_dir, contexts, file_set)
-        for item in profile_items:
-            if profile_id is None and item.reason == "profile_not_matched":
+    for rule, file_set in file_sets:
+        rule_items = rule.build_plan_items(source_dir, contexts, file_set)
+        for item in rule_items:
+            if rule_id is None and item.reason == "rule_not_matched":
                 continue
-            items.append(with_profile_details(item, profile))
+            items.append(normalize_rule_plan_item(item, rule))
     items.extend(
         build_unmatched_items(
             source_dir,
             items,
-            profiles,
+            rules,
             include_formatted=include_formatted,
         )
     )
-    items = mark_source_profile_conflicts(items)
+    items = mark_source_rule_conflicts(items)
     items = mark_destination_conflicts(items)
     return RenamePlan(
         version=RENAME_PLAN_VERSION,
         operation="rename",
         source_dir=source_dir,
         options={
-            "profile": profile_id or "auto",
-            "profiles": [profile.id for profile in profiles],
+            "rule": rule_id or "auto",
+            "rules": [rule.id for rule in rules],
             "workers": workers,
             "include_formatted": include_formatted,
         },
@@ -86,29 +87,15 @@ def build_rename_plan(
     )
 
 
-def select_profiles(profile_id=None):
-    if profile_id is not None:
-        return (get_profile(profile_id),)
-    return list_profiles()
+def select_rules(rule_id=None):
+    if rule_id is not None:
+        return (get_rule(rule_id),)
+    return list_rules()
 
 
-def with_profile_details(item, profile):
-    details = dict(item.details)
-    details.setdefault("profile", profile.id)
-    details.setdefault("profile_label", profile.label)
-    return RenamePlanItem(
-        source=item.source,
-        destination=item.destination,
-        action=item.action,
-        status=item.status,
-        reason=item.reason,
-        details=details,
-    )
-
-
-def build_unmatched_items(source_dir, items, profiles, include_formatted=False):
+def build_unmatched_items(source_dir, items, rules, include_formatted=False):
     planned_sources = {item.source for item in items}
-    profile_ids = [profile.id for profile in profiles]
+    rule_ids = [rule.id for rule in rules]
     unmatched_items = []
     for file_path in collect_source_files(source_dir, include_formatted=include_formatted):
         if file_path in planned_sources:
@@ -119,8 +106,8 @@ def build_unmatched_items(source_dir, items, profiles, include_formatted=False):
                 destination=None,
                 action="rename",
                 status="skipped",
-                reason="no_matching_profile",
-                details={"profiles": profile_ids},
+                reason="no_matching_rule",
+                details={"rules": rule_ids},
             )
         )
     return unmatched_items
@@ -141,7 +128,7 @@ def collect_source_files(source_dir, include_formatted=False):
     return file_paths
 
 
-def mark_source_profile_conflicts(items):
+def mark_source_rule_conflicts(items):
     ready_by_source = {}
     for index, item in enumerate(items):
         if item.status == "ready":
@@ -151,17 +138,17 @@ def mark_source_profile_conflicts(items):
     for indexes in ready_by_source.values():
         if len(indexes) <= 1:
             continue
-        profiles = [updated[index].details.get("profile") for index in indexes]
+        rules = [updated[index].details.get("rule") for index in indexes]
         for index in indexes:
             item = updated[index]
             details = dict(item.details)
-            details["matched_profiles"] = profiles
+            details["matched_rules"] = rules
             updated[index] = RenamePlanItem(
                 source=item.source,
                 destination=item.destination,
                 action=item.action,
                 status="conflict",
-                reason="source_matched_multiple_profiles",
+                reason="source_matched_multiple_rules",
                 details=details,
             )
     return updated

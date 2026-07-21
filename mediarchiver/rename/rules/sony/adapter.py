@@ -4,24 +4,24 @@ import re
 from mediarchiver.common.tool import is_vid
 from mediarchiver.rename.metadata import FileMetadataContext
 from mediarchiver.rename.plan import RenamePlanItem
-from mediarchiver.rename.profile import ProfileFileSet
-from mediarchiver.rename.profiles.sony.presets.a7m4 import PRESET as A7M4_PRESET
+from mediarchiver.rename.rule import RuleFileSet
 from mediarchiver.rename.rules import is_formatted_file_name
+from mediarchiver.rename.rules.sony.presets.a7m4 import PRESET as A7M4_PRESET
 
 SONY_CLIP_PATTERN = re.compile(r"^C\d{4}\.(?:MP4|MOV)$", re.IGNORECASE)
 SONY_XML_PATTERN = re.compile(r"^C\d{4}M\d{2}\.XML$", re.IGNORECASE)
 
 
-class SonyA7M4Profile:
+class SonyA7M4Rule:
     id = "sony:a7m4"
     label = "Sony A7M4"
-    description = "Sony A7M4 XAVC media rename profile"
+    description = "Sony A7M4 XAVC media rename rule"
     required_tools = ("exiftool", "ffprobe")
 
     def __init__(self):
         self.preset = A7M4_PRESET
 
-    def collect_files(self, source_dir: str, include_formatted: bool = False) -> ProfileFileSet:
+    def collect_files(self, source_dir: str, include_formatted: bool = False) -> RuleFileSet:
         media_paths = []
         sidecar_paths = []
         for name in sorted(os.listdir(source_dir)):
@@ -35,7 +35,7 @@ class SonyA7M4Profile:
                 continue
             if is_vid(file_path) and SONY_CLIP_PATTERN.match(name):
                 media_paths.append(file_path)
-        return ProfileFileSet(
+        return RuleFileSet(
             source_dir=source_dir,
             media_paths=media_paths,
             sidecar_paths=sidecar_paths,
@@ -45,7 +45,7 @@ class SonyA7M4Profile:
         self,
         source_dir: str,
         contexts: dict[str, FileMetadataContext],
-        file_set: ProfileFileSet,
+        file_set: RuleFileSet,
     ) -> list[RenamePlanItem]:
         items = []
         primary_items_by_id = {}
@@ -59,8 +59,8 @@ class SonyA7M4Profile:
                         destination=None,
                         action="rename",
                         status="skipped",
-                        reason="profile_not_matched",
-                        details={"profile": self.id},
+                        reason="rule_not_matched",
+                        details={"rule": self.id},
                     )
                 )
                 continue
@@ -90,4 +90,4 @@ def match_sony_a7m4(context: FileMetadataContext) -> tuple[str, ...]:
     return tuple(reasons) if "metadata=device_model_ilce_7m4" in reasons else ()
 
 
-PROFILE = SonyA7M4Profile()
+RULE = SonyA7M4Rule()

@@ -70,19 +70,19 @@ UV_DEFAULT_INDEX=https://pypi.org/simple just binary
 
 ## Usage
 
-### Profile Authoring Metadata Inspection
+### Rule Authoring Metadata Inspection
 
-For profile-driven rules, inspect representative files directly with `exiftool` and `ffprobe` as described in the project profile-authoring skill.
+For rule-driven naming, inspect representative files directly with `exiftool` and `ffprobe` as described in the project rule-authoring skill.
 
 ### Rename
 
-List supported rename profiles:
+List supported rename rules:
 
 ```bash
-mediarchiver rename --list-profiles
+mediarchiver rename --list-rules
 ```
 
-Preview a mixed-folder rename plan across all supported profiles (no files are modified):
+Preview a mixed-folder rename plan across all supported rules (no files are modified):
 
 ```bash
 mediarchiver rename <source>
@@ -94,10 +94,10 @@ Apply renames:
 mediarchiver rename <source> --apply
 ```
 
-Write a plan to a custom path:
+Write a plan to a custom output directory:
 
 ```bash
-mediarchiver rename <source> --output-plan /tmp/rename-plan.json
+mediarchiver rename <source> --output /tmp/mediarchiver-plan
 ```
 
 ### Archive
@@ -119,7 +119,7 @@ mediarchiver archive <source> --to <target> --workers 2
 |---|---|
 | `rename.log` | Rename workflow log |
 | `archived.log` | Archive workflow log |
-| `rename-plan.json` | Rename plan written into the source directory |
+| `rename-plan.json` | Rename plan written into the source directory by default, or into `--output` when specified |
 | `rename_operations.jsonl` | Structured rename operation records |
 | `rename_conflicts.jsonl` | Rename conflict records |
 | `archive_operations.jsonl` | Structured archive operation records |

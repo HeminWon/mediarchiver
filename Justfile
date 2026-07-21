@@ -22,18 +22,17 @@ check: lint test
 
 smoke:
     uv run --no-sync python -m mediarchiver --help
-    uv run --no-sync python -m mediarchiver rename --list-profiles
-    uv run --no-sync python rename/rename_dji_pocket4p.py --help
+    uv run --no-sync python -m mediarchiver rename --list-rules
 
 build:
     uv build
 
 binary:
-    uv run --extra dev pyinstaller --clean --noconfirm --onefile --name mediarchiver --hidden-import zlib --collect-submodules mediarchiver.rename.profiles --distpath dist/bin --workpath build/pyinstaller --specpath build/pyinstaller mediarchiver/__main__.py
+    uv run --extra dev pyinstaller --clean --noconfirm --onefile --name mediarchiver --hidden-import zlib --collect-submodules mediarchiver.rename.rules --distpath dist/bin --workpath build/pyinstaller --specpath build/pyinstaller mediarchiver/__main__.py
 
 smoke-binary: binary
     ./dist/bin/mediarchiver --help
-    ./dist/bin/mediarchiver rename --list-profiles
+    ./dist/bin/mediarchiver rename --list-rules
 
 install-local: binary
     local_bin="${LOCAL_BIN:-$HOME/.local/bin}"; \

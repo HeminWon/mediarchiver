@@ -1,14 +1,14 @@
 from importlib import import_module
 from pkgutil import iter_modules
 
-from mediarchiver.rename import profiles as profiles_package
-from mediarchiver.rename.profile import RenameProfile
+import mediarchiver.rename.rules as rules_package
+from mediarchiver.rename.rule import RenameRule
 
 
-def discover_profiles() -> tuple[RenameProfile, ...]:
+def discover_rules() -> tuple[RenameRule, ...]:
     discovered = []
-    package_prefix = profiles_package.__name__ + "."
-    for module_info in iter_modules(profiles_package.__path__, package_prefix):
+    package_prefix = rules_package.__name__ + "."
+    for module_info in iter_modules(rules_package.__path__, package_prefix):
         if not module_info.ispkg:
             continue
         adapter_module_name = f"{module_info.name}.adapter"
@@ -18,43 +18,43 @@ def discover_profiles() -> tuple[RenameProfile, ...]:
             if exc.name == adapter_module_name:
                 continue
             raise
-        discovered.extend(_profiles_from_adapter(adapter_module))
-    return tuple(sorted(_validate_profiles(discovered), key=lambda profile: profile.id))
+        discovered.extend(_rules_from_adapter(adapter_module))
+    return tuple(sorted(_validate_rules(discovered), key=lambda rule: rule.id))
 
 
-def _profiles_from_adapter(adapter_module):
-    profiles = getattr(adapter_module, "PROFILES", None)
-    if profiles is not None:
-        return tuple(profiles)
-    profile = getattr(adapter_module, "PROFILE", None)
-    return () if profile is None else (profile,)
+def _rules_from_adapter(adapter_module):
+    rules = getattr(adapter_module, "RULES", None)
+    if rules is not None:
+        return tuple(rules)
+    rule = getattr(adapter_module, "RULE", None)
+    return () if rule is None else (rule,)
 
 
-def _validate_profiles(profiles):
-    profiles_by_id = {}
-    for profile in profiles:
-        profile_id = getattr(profile, "id", None)
-        if not profile_id:
-            raise ValueError(f"rename profile missing id: {profile!r}")
-        if profile_id in profiles_by_id:
-            raise ValueError(f"duplicate rename profile id: {profile_id}")
-        profiles_by_id[profile_id] = profile
-    return tuple(profiles_by_id.values())
+def _validate_rules(rules):
+    rules_by_id = {}
+    for rule in rules:
+        rule_id = getattr(rule, "id", None)
+        if not rule_id:
+            raise ValueError(f"rename rule missing id: {rule!r}")
+        if rule_id in rules_by_id:
+            raise ValueError(f"duplicate rename rule id: {rule_id}")
+        rules_by_id[rule_id] = rule
+    return tuple(rules_by_id.values())
 
 
-PROFILES: tuple[RenameProfile, ...] = discover_profiles()
-PROFILES_BY_ID = {profile.id: profile for profile in PROFILES}
+RULES: tuple[RenameRule, ...] = discover_rules()
+RULES_BY_ID = {rule.id: rule for rule in RULES}
 
 
-def get_profile(profile_id: str) -> RenameProfile:
+def get_rule(rule_id: str) -> RenameRule:
     try:
-        return PROFILES_BY_ID[profile_id]
+        return RULES_BY_ID[rule_id]
     except KeyError as exc:
-        supported = ", ".join(sorted(PROFILES_BY_ID))
+        supported = ", ".join(sorted(RULES_BY_ID))
         raise ValueError(
-            f"unsupported rename profile: {profile_id}. supported: {supported}"
+            f"unsupported rename rule: {rule_id}. supported: {supported}"
         ) from exc
 
 
-def list_profiles() -> tuple[RenameProfile, ...]:
-    return PROFILES
+def list_rules() -> tuple[RenameRule, ...]:
+    return RULES

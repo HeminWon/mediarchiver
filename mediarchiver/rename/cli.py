@@ -15,17 +15,17 @@ from mediarchiver.common.external import (
 )
 from mediarchiver.common.logging_utils import configure_logging
 from mediarchiver.rename.plan import write_rename_plan
-from mediarchiver.rename.registry import list_profiles
+from mediarchiver.rename.registry import list_rules
 from mediarchiver.rename.service import apply_rename_plan, build_rename_plan
 
 DEFAULT_PLAN_FILENAME = "rename-plan.json"
 RENAME_USAGE = (
-    "%(prog)s <source> [--apply] [--output-plan PATH]\n"
-    "       %(prog)s --list-profiles"
+    "%(prog)s <source> [--apply] [--output DIR]\n"
+    "       %(prog)s --list-rules"
 )
 RENAME_EPILOG = (
     "Examples:\n"
-    "  mediarchiver rename --list-profiles\n"
+    "  mediarchiver rename --list-rules\n"
     "  mediarchiver rename <source>\n"
     "  mediarchiver rename <source> --apply"
 )
@@ -36,13 +36,14 @@ def configure_parser(parser):
         "source",
         nargs="?",
         type=str,
-        help="source directory; required unless --list-profiles is used",
+        help="source directory; required unless --list-rules is used",
     )
     parser.add_argument(
-        "--list-profiles",
+        "--list-rules",
+        dest="list_rules",
         action="store_true",
         default=False,
-        help="list supported rename profiles",
+        help="list supported rename rules",
     )
     parser.add_argument(
         "--apply",
@@ -51,10 +52,11 @@ def configure_parser(parser):
         help="apply ready renames; default is preview only",
     )
     parser.add_argument(
-        "--output-plan",
+        "--output",
         type=str,
         default=None,
-        help="write rename plan JSON file",
+        metavar="DIR",
+        help=f"write {DEFAULT_PLAN_FILENAME} into DIR",
     )
     return parser
 
@@ -63,7 +65,7 @@ def build_parser():
     parser = argparse.ArgumentParser(
         prog="mediarchiver rename",
         usage=RENAME_USAGE,
-        description="Build or apply profile-based rename plans",
+        description="Build or apply rule-based rename plans",
         epilog=RENAME_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -74,8 +76,8 @@ def register_subparser(subparsers):
     parser = subparsers.add_parser(
         "rename",
         usage=RENAME_USAGE,
-        help="build or apply profile-based rename plans",
-        description="Build or apply profile-based rename plans",
+        help="build or apply rule-based rename plans",
+        description="Build or apply rule-based rename plans",
         epilog=RENAME_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -85,13 +87,13 @@ def register_subparser(subparsers):
 
 
 def validate_args(parser, args):
-    if args.list_profiles:
+    if args.list_rules:
         return
     if args.source is None:
         parser.error(
             "missing required source directory.\n\n"
             "Preview example: mediarchiver rename <source>\n"
-            "List profiles:   mediarchiver rename --list-profiles"
+            "List rules:      mediarchiver rename --list-rules"
         )
 
 
@@ -99,9 +101,9 @@ def default_plan_path(source):
     return os.path.join(os.path.abspath(source), DEFAULT_PLAN_FILENAME)
 
 
-def print_profiles():
-    for profile in list_profiles():
-        print(f"{profile.id}\t{profile.label}\t{profile.description}")
+def print_rules():
+    for rule in list_rules():
+        print(f"{rule.id}\t{rule.label}\t{rule.description}")
 
 
 def print_preview(plan):
@@ -112,39 +114,39 @@ def print_preview(plan):
 
 
 def run_with_args(args):
-    if args.list_profiles:
-        print_profiles()
+    if args.list_rules:
+        print_rules()
         return 0
 
     source_dir = os.path.abspath(args.source)
     if not os.path.isdir(source_dir):
         raise ValueError(f"source directory does not exist: {source_dir}")
-    profiles = list_profiles()
-    profile_ids = [profile.id for profile in profiles]
+    rules = list_rules()
+    rule_ids = [rule.id for rule in rules]
     log_path = configure_logging(source_dir, "rename.log")
     required_tools = sorted(
-        {tool for profile in profiles for tool in profile.required_tools}
+        {tool for rule in rules for tool in rule.required_tools}
     )
     preflight_check_commands(required_tools)
-    output_plan = (
-        os.path.abspath(args.output_plan)
-        if args.output_plan
+    plan_path = (
+        os.path.join(os.path.abspath(args.output), DEFAULT_PLAN_FILENAME)
+        if args.output
         else default_plan_path(source_dir)
     )
     print_run_header(
         "rename",
         {
             "source": source_dir,
-            "profiles": ", ".join(profile_ids),
+            "rules": ", ".join(rule_ids),
             "apply": args.apply,
-            "plan": output_plan,
+            "plan": plan_path,
             "log": log_path,
         },
     )
     plan = build_rename_plan(
         source_dir,
     )
-    write_rename_plan(plan, output_plan)
+    write_rename_plan(plan, plan_path)
     print_preview(plan)
     print_plan_summary("rename", plan.summary)
 

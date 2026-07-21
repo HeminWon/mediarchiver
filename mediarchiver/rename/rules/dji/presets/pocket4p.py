@@ -4,11 +4,17 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from mediarchiver.common.tool import is_img, is_vid
 from mediarchiver.rename.metadata import FileMetadataContext, get_context_load_error
 from mediarchiver.rename.plan import RenamePlanItem
 from mediarchiver.rename.rules import formatted_date
 
-DEVICE_UNIT = "Sony-A7M4"
+DEVICE_UNIT = "DJI-Pocket4P"
+RESOLUTION_TAGS = {
+    (1920, 1080): "FHD",
+    (3840, 2160): "4K",
+    (7680, 4320): "8K",
+}
 
 
 @dataclass(frozen=True)
@@ -20,9 +26,9 @@ class RenameRuleError(ValueError):
         return self.reason
 
 
-class SonyA7M4Preset:
-    id = "a7m4"
-    label = "Sony A7M4"
+class Pocket4PPreset:
+    id = "pocket4p"
+    label = "DJI Pocket 4P"
     device_unit = DEVICE_UNIT
 
     def build_media_item(
@@ -32,24 +38,18 @@ class SonyA7M4Preset:
         match_reasons: tuple[str, ...],
     ) -> RenamePlanItem:
         item = build_media_plan_item(source_dir, context)
-        item.details["profile_match"] = list(match_reasons)
+        item.details["rule_match"] = list(match_reasons)
         return item
 
-    def build_xml_item(
+    def build_lrf_item(
         self,
         file_path: str,
-        primary_items_by_id: dict[str, RenamePlanItem],
+        primary_items_by_stem: dict[str, RenamePlanItem],
     ) -> RenamePlanItem:
-        return build_xml_plan_item(file_path, primary_items_by_id)
-
-    def original_id_from_name(self, file_name: str):
-        try:
-            return extract_original_id(file_name)[0]
-        except RenameRuleError:
-            return None
+        return build_lrf_plan_item(file_path, primary_items_by_stem)
 
 
-PRESET = SonyA7M4Preset()
+PRESET = Pocket4PPreset()
 
 
 def build_media_plan_item(source_dir: str, context: FileMetadataContext) -> RenamePlanItem:
@@ -104,19 +104,16 @@ def build_media_plan_item(source_dir: str, context: FileMetadataContext) -> Rena
     )
 
 
-def build_xml_plan_item(
+def build_lrf_plan_item(
     file_path: str,
-    primary_items_by_id: dict[str, RenamePlanItem],
+    primary_items_by_stem: dict[str, RenamePlanItem],
 ) -> RenamePlanItem:
     source_path = Path(file_path)
-    original_id = extract_xml_original_id(source_path.name)
+    primary_item = primary_items_by_stem.get(source_path.stem)
     details = {
-        "sidecar_rule": "sony_xml",
-        "sidecar_type": "non_real_time_metadata",
-        "original_id": original_id,
-        "original_id_source": "filename",
+        "sidecar_rule": "dji_lrf",
+        "sidecar_type": "low_resolution_proxy",
     }
-    primary_item = primary_items_by_id.get(original_id)
     if primary_item is None:
         return RenamePlanItem(
             source=file_path,
@@ -170,7 +167,7 @@ def build_xml_plan_item(
 
 def build_new_file_name(context: FileMetadataContext):
     date, date_source = format_required_date(context)
-    original_id, original_id_source = extract_original_id(context.file_name)
+    original_id = extract_original_id(context.file_name)
     tech_tags = build_tech_tags(context)
     parts = [date, DEVICE_UNIT]
     if tech_tags:
@@ -181,60 +178,64 @@ def build_new_file_name(context: FileMetadataContext):
             "date": date,
             "date_source": date_source,
             "device_unit": DEVICE_UNIT,
-            "device_unit_source": "profile",
+            "device_unit_source": "rule",
             "original_id": original_id,
-            "original_id_source": original_id_source,
+            "original_id_source": "filename",
         },
         "optional": {
             "tech_tags": tech_tags,
-            "missing": [] if tech_tags else ["tech_tags"],
+            "missing": [],
         },
     }
 
 
 def format_required_date(context: FileMetadataContext):
-    metadata = context.exif_metadata or {}
-    for field in ("CreationDateValue", "CreationDate", "DateTimeOriginal", "CreateDate"):
-        formatted = formatted_date(metadata.get(field))
-        if formatted is not None:
-            return formatted, f"metadata:{field}"
-    raise RenameRuleError("missing_date", {"file_name": context.file_name})
+    filename_date = date_from_dji_filename(context.file_name)
+    if filename_date is not None:
+        return filename_date, "filename"
+
+    media_date = context.media_date
+    formatted = formatted_date(media_date) if media_date else None
+    if formatted is None:
+        raise RenameRuleError("missing_date", {"media_date": media_date})
+    return formatted, "metadata"
+
+
+def date_from_dji_filename(file_name: str):
+    match = re.search(r"DJI_(\d{14})_", file_name)
+    if not match:
+        return None
+    raw = match.group(1)
+    return f"{raw[:8]}-{raw[8:14]}"
 
 
 def extract_original_id(file_name: str):
-    match = re.match(r"C(\d{4})\.(?:MP4|MOV)$", file_name, re.IGNORECASE)
+    match = re.search(r"_(\d{4})_", file_name)
     if not match:
         raise RenameRuleError("missing_original_id", {"file_name": file_name})
-    return match.group(1), "filename"
-
-
-def extract_xml_original_id(file_name: str):
-    match = re.match(r"C(\d{4})M\d{2}\.XML$", file_name, re.IGNORECASE)
-    if not match:
-        return None
     return match.group(1)
 
 
 def build_tech_tags(context: FileMetadataContext):
-    metadata = context.ffprobe_metadata or {}
-    stream = first_video_stream(metadata)
-    if stream is None:
+    if is_img(context.file_path):
+        return None
+    if not is_vid(context.file_path):
+        return None
+    metadata = context.ffprobe_metadata
+    if metadata is None:
+        raise RenameRuleError("missing_ffprobe_metadata", {"file_name": context.file_name})
+    video_stream = first_video_stream(metadata)
+    if video_stream is None:
         raise RenameRuleError("missing_video_stream", {"file_name": context.file_name})
+
     tags = [
-        resolution_tag(stream),
-        fps_tag(stream),
-        codec_tag(stream),
+        resolution_tag(video_stream),
+        fps_tag(video_stream),
     ]
-    bit_depth = bit_depth_tag(stream)
-    if bit_depth:
-        tags.append(bit_depth)
-    chroma = chroma_tag(stream)
-    if chroma:
-        tags.append(chroma)
     gamma = gamma_tag(context.exif_metadata or {})
     if gamma:
         tags.append(gamma)
-    return "-".join(tag for tag in tags if tag)
+    return "-".join(tags)
 
 
 def first_video_stream(metadata: dict):
@@ -249,11 +250,7 @@ def resolution_tag(video_stream: dict):
     height = video_stream.get("height")
     if width is None or height is None:
         raise RenameRuleError("missing_resolution", {"video_stream": video_stream})
-    return {
-        (1920, 1080): "FHD",
-        (3840, 2160): "4K",
-        (7680, 4320): "8K",
-    }.get((width, height), f"{width}x{height}")
+    return RESOLUTION_TAGS.get((width, height), f"{width}x{height}")
 
 
 def fps_tag(video_stream: dict):
@@ -271,44 +268,38 @@ def fps_tag(video_stream: dict):
     return f"{fps.quantize(Decimal('0.01')).normalize()}FPS"
 
 
-def codec_tag(video_stream: dict):
-    codec_name = str(video_stream.get("codec_name", "")).lower()
-    if codec_name in {"h264", "avc1"}:
-        return "H264"
-    if codec_name in {"hevc", "h265"}:
-        return "HEVC"
-    return re.sub(r"[^A-Za-z0-9]+", "", codec_name).upper() or None
-
-
-def bit_depth_tag(video_stream: dict):
-    raw = video_stream.get("bits_per_raw_sample")
-    if raw is not None and str(raw).isdigit():
-        return f"{raw}Bit"
-    pixel_format = str(video_stream.get("pix_fmt", "")).lower()
-    match = re.search(r"p(\d+)", pixel_format)
-    if match:
-        return f"{match.group(1)}Bit"
-    return None
-
-
-def chroma_tag(video_stream: dict):
-    pixel_format = str(video_stream.get("pix_fmt", "")).lower()
-    if "422" in pixel_format:
-        return "422"
-    if "420" in pixel_format:
-        return "420"
-    if "444" in pixel_format:
-        return "444"
-    return None
-
-
 def gamma_tag(exif_metadata: dict):
-    gamma = exif_metadata.get("AcquisitionRecordGroupItemValue")
+    gamma = exif_metadata.get("DjiCameraColorGammaSxS")
     if gamma is None:
         return None
-    normalized = str(gamma).strip().lower().replace("-", "").replace("_", "")
-    if normalized == "slog3":
-        return "SLog3"
-    if normalized == "slog2":
-        return "SLog2"
+    normalized = str(gamma).strip().lower().replace(" ", "")
+    if normalized in {"d-log", "dlog"}:
+        return "DLog"
+    if normalized in {"d-logm", "dlogm"}:
+        return "DLogM"
     return re.sub(r"[^A-Za-z0-9]+", "", str(gamma).strip()) or None
+
+
+def mark_destination_conflicts(items: list[RenamePlanItem]) -> list[RenamePlanItem]:
+    ready_by_destination = {}
+    for index, item in enumerate(items):
+        if item.status == "ready" and item.destination is not None:
+            ready_by_destination.setdefault(item.destination, []).append(index)
+
+    updated = list(items)
+    for indexes in ready_by_destination.values():
+        if len(indexes) <= 1:
+            continue
+        for index in indexes:
+            item = updated[index]
+            details = dict(item.details)
+            details["duplicate_sources"] = [updated[i].source for i in indexes]
+            updated[index] = RenamePlanItem(
+                source=item.source,
+                destination=item.destination,
+                action=item.action,
+                status="conflict",
+                reason="destination_duplicated_in_plan",
+                details=details,
+            )
+    return updated
