@@ -1,6 +1,30 @@
-# mediarchiver
+<p align="center">
+  <img src="logo.png" alt="mediarchiver logo" width="160">
+</p>
 
-Media archive and rename CLI for regular camera, phone, and sidecar files.
+<h1 align="center">mediarchiver</h1>
+
+<p align="center">
+  Media archive and rename CLI for regular camera, phone, and sidecar files.
+</p>
+
+<p align="center">
+  <strong>English</strong> | <a href="README.zh-CN.md">中文</a>
+</p>
+
+## Who It Is For
+
+- Creators, photographers, and video editors who regularly import mixed files from phones, cameras, and action cameras.
+- People who need predictable file names before editing, backup, delivery, or long-term storage.
+- Users who keep original camera sidecars such as XML, SRT, LRF, XMP, or similar companion files.
+- Anyone who wants a safe preview before batch renaming or archiving real media files.
+
+## What It Solves
+
+- Camera brands and devices generate inconsistent file names.
+- Photos, videos, and sidecars are easy to split apart during manual cleanup.
+- Large folders are hard to verify before moving into year, quarter, or month archives.
+- Batch file operations are risky without a readable preview and explicit apply step.
 
 ## Download
 
@@ -29,32 +53,6 @@ brew install exiftool ffmpeg
 
 # Ubuntu / Debian
 sudo apt install libimage-exiftool-perl ffmpeg
-```
-
-## How It Works
-
-```mermaid
-flowchart TD
-    user["Media folder"] --> cli["mediarchiver CLI"]
-
-    cli --> rename["rename"]
-    cli --> archive["archive"]
-
-    rename --> rules["Registered rename rules"]
-    rules --> apple["Apple iPhone"]
-    rules --> dji["DJI Pocket 4P"]
-    rules --> sony["Sony A7M4"]
-    rename --> rename_meta["exiftool + ffprobe metadata"]
-    rename_meta --> rename_preview["Rename preview plan"]
-    rename_preview --> renamed["Renamed media when --apply is used"]
-
-    archive --> archive_meta["exiftool metadata"]
-    archive --> sidecars["Sidecar pairing"]
-    sidecars --> paired["Move paired XML / SRT / LRF / XMP files with media"]
-    archive_meta --> groups["Year / quarter / month groups"]
-    paired --> groups
-    groups --> archive_preview["Archive preview"]
-    archive_preview --> archived["Moved files when --apply is used"]
 ```
 
 ## Usage
