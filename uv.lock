@@ -1,10 +1,6 @@
 version = 1
 revision = 3
-requires-python = ">=3.9"
-resolution-markers = [
-    "python_full_version >= '3.10'",
-    "python_full_version < '3.10'",
-]
+requires-python = "==3.11.*"
 
 [[package]]
 name = "altgraph"
@@ -25,18 +21,6 @@ wheels = [
 ]
 
 [[package]]
-name = "importlib-metadata"
-version = "8.7.1"
-source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
-dependencies = [
-    { name = "zipp" },
-]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f3/49/3b30cad09e7771a4982d9975a8cbf64f00d4a1ececb53297f1d9a7be1b10/importlib_metadata-8.7.1.tar.gz", hash = "sha256:49fef1ae6440c182052f407c8d34a68f72efc36db9ca90dc0113398f2fdde8bb", size = 57107, upload-time = "2025-12-21T10:00:19.278Z" }
-wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/fa/5e/f8e9a1d23b9c20a551a8a02ea3637b4642e22c2626e3a13a9a29cdea99eb/importlib_metadata-8.7.1-py3-none-any.whl", hash = "sha256:5a1f80bf1daa489495071efbb095d75a634cf28a8bc299581244063b53176151", size = 27865, upload-time = "2025-12-21T10:00:18.329Z" },
-]
-
-[[package]]
 name = "macholib"
 version = "1.16.4"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
@@ -50,7 +34,7 @@ wheels = [
 
 [[package]]
 name = "mediarchiver"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "tqdm" },
@@ -94,14 +78,12 @@ version = "6.21.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "altgraph" },
-    { name = "importlib-metadata", marker = "python_full_version < '3.10'" },
     { name = "macholib", marker = "sys_platform == 'darwin'" },
     { name = "packaging" },
     { name = "pefile", marker = "sys_platform == 'win32'" },
     { name = "pyinstaller-hooks-contrib" },
     { name = "pywin32-ctypes", marker = "sys_platform == 'win32'" },
-    { name = "setuptools", version = "82.0.1", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version < '3.10'" },
-    { name = "setuptools", version = "83.0.0", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version >= '3.10'" },
+    { name = "setuptools" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/d5/4d/ec706c3fcf39e26888c35b39615ff4d5865d184069666c47492cff1fbe50/pyinstaller-6.21.0.tar.gz", hash = "sha256:bb9fab705983e393a2d1cac77d6972513057ad800215fd861dc15ff5272e98fd", size = 4061519, upload-time = "2026-06-13T14:15:06.25Z" }
 wheels = [
@@ -123,7 +105,6 @@ name = "pyinstaller-hooks-contrib"
 version = "2026.6"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "importlib-metadata", marker = "python_full_version < '3.10'" },
     { name = "packaging" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/94/5b/c9fe0db5e83ee1c39b2258fa21d23b15e1a60786b6c5990ee5074ead8bb6/pyinstaller_hooks_contrib-2026.6.tar.gz", hash = "sha256:bef5002c32f4f50bd55b005da12cff64eca8783e7eaf86a06a62410164bab725", size = 173354, upload-time = "2026-06-08T22:37:16.152Z" }
@@ -167,23 +148,8 @@ wheels = [
 
 [[package]]
 name = "setuptools"
-version = "82.0.1"
-source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
-resolution-markers = [
-    "python_full_version < '3.10'",
-]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/4f/db/cfac1baf10650ab4d1c111714410d2fbb77ac5a616db26775db562c8fab2/setuptools-82.0.1.tar.gz", hash = "sha256:7d872682c5d01cfde07da7bccc7b65469d3dca203318515ada1de5eda35efbf9", size = 1152316, upload-time = "2026-03-09T12:47:17.221Z" }
-wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/9d/76/f789f7a86709c6b087c5a2f52f911838cad707cc613162401badc665acfe/setuptools-82.0.1-py3-none-any.whl", hash = "sha256:a59e362652f08dcd477c78bb6e7bd9d80a7995bc73ce773050228a348ce2e5bb", size = 1006223, upload-time = "2026-03-09T12:47:15.026Z" },
-]
-
-[[package]]
-name = "setuptools"
 version = "83.0.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
-resolution-markers = [
-    "python_full_version >= '3.10'",
-]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/34/26/f5d29e25ffdb535afef2d35cdb55b325298f96debd670da4c325e08d70f4/setuptools-83.0.0.tar.gz", hash = "sha256:025bccbbf0fa05b6192bc64ae1e7b16e001fd6d6d4d5de03c97b1c1ade523bef", size = 1154254, upload-time = "2026-07-04T15:31:22.699Z" }
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/5d/40/e1e72872c6354b306daef1703549e8e83b4d43cfea356311bf722a043752/setuptools-83.0.0-py3-none-any.whl", hash = "sha256:29b23c360f22f414dc7336bb39178cc7bcbf6021ed2733cde173f09dba19abb3", size = 1008090, upload-time = "2026-07-04T15:31:20.885Z" },
@@ -199,13 +165,4 @@ dependencies = [
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/a8/4b/29b4ef32e036bb34e4ab51796dd745cdba7ed47ad142a9f4a1eb8e0c744d/tqdm-4.67.1.tar.gz", hash = "sha256:f8aef9c52c08c13a65f30ea34f4e5aac3fd1a34959879d7e59e63027286627f2", size = 169737, upload-time = "2024-11-24T20:12:22.481Z" }
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/d0/30/dc54f88dd4a2b5dc8a0279bdd7270e735851848b762aeb1c1184ed1f6b14/tqdm-4.67.1-py3-none-any.whl", hash = "sha256:26445eca388f82e72884e0d580d5464cd801a3ea01e63e5601bdff9ba6a48de2", size = 78540, upload-time = "2024-11-24T20:12:19.698Z" },
-]
-
-[[package]]
-name = "zipp"
-version = "3.23.1"
-source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/30/21/093488dfc7cc8964ded15ab726fad40f25fd3d788fd741cc1c5a17d78ee8/zipp-3.23.1.tar.gz", hash = "sha256:32120e378d32cd9714ad503c1d024619063ec28aad2248dc6672ad13edfa5110", size = 25965, upload-time = "2026-04-13T23:21:46.6Z" }
-wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/08/8a/0861bec20485572fbddf3dfba2910e38fe249796cb73ecdeb74e07eeb8d3/zipp-3.23.1-py3-none-any.whl", hash = "sha256:0b3596c50a5c700c9cb40ba8d86d9f2cc4807e9bedb06bcdf7fac85633e444dc", size = 10378, upload-time = "2026-04-13T23:21:45.386Z" },
 ]

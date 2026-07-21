@@ -15,14 +15,12 @@ lock:
 lint:
     uv run --no-sync ruff check mediarchiver
 
-test:
-    @echo "No tests configured; skipping."
-
-check: lint test
+check: lint
 
 smoke:
     uv run --no-sync python -m mediarchiver --help
     uv run --no-sync python -m mediarchiver rename --list-rules
+    uv run --no-sync python -m mediarchiver archive --help
 
 build:
     uv build

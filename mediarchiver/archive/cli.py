@@ -2,17 +2,23 @@ import argparse
 import os
 import sys
 
-from mediarchiver.archive.service import sort_files
+from mediarchiver.archive.service import archive_files
 from mediarchiver.common.console import confirm_proceed, print_run_header, print_run_summary
 from mediarchiver.common.external import (
     DependencyMissingError,
     format_missing_dependency_message,
     preflight_check_commands,
 )
-from mediarchiver.common.logging_utils import configure_logging
-from mediarchiver.common.workers import positive_int
 
 ARCHIVE_MODES = ("quarter", "month", "year")
+ARCHIVE_USAGE = "%(prog)s <source> [--to DIR] [--by quarter|month|year] [--apply]"
+ARCHIVE_EPILOG = (
+    "Examples:\n"
+    "  mediarchiver archive <source>\n"
+    "  mediarchiver archive <source> --to <target>\n"
+    "  mediarchiver archive <source> --to <target> --by month\n"
+    "  mediarchiver archive <source> --to <target> --apply"
+)
 
 
 def configure_parser(parser):
@@ -29,11 +35,10 @@ def configure_parser(parser):
         help="folder grouping: quarter (default), month, or year",
     )
     parser.add_argument(
-        "--dry-run",
-        dest="dry_run",
+        "--apply",
         action="store_true",
         default=False,
-        help="preview moves without changing files",
+        help="apply archive moves; default is preview only",
     )
     parser.add_argument(
         "--yes",
@@ -41,13 +46,7 @@ def configure_parser(parser):
         dest="yes",
         action="store_true",
         default=False,
-        help="skip confirmation prompt before archiving",
-    )
-    parser.add_argument(
-        "--workers",
-        type=positive_int,
-        default=None,
-        help="metadata prefetch workers (default: auto)",
+        help="skip confirmation prompt when --apply is used",
     )
     return parser
 
@@ -55,14 +54,22 @@ def configure_parser(parser):
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="mediarchiver archive",
+        usage=ARCHIVE_USAGE,
         description="Archive media by date into year/quarter, year/month, or year folders",
+        epilog=ARCHIVE_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     return configure_parser(parser)
 
 
 def register_subparser(subparsers):
     parser = subparsers.add_parser(
-        "archive", help="archive media into date-based folders"
+        "archive",
+        usage=ARCHIVE_USAGE,
+        help="archive media into date-based folders",
+        description="Archive media by date into year/quarter, year/month, or year folders",
+        epilog=ARCHIVE_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     configure_parser(parser)
     parser.set_defaults(handler=run_with_args)
@@ -73,9 +80,8 @@ def run_with_args(args):
     source_dir = os.path.abspath(args.source)
     if not os.path.isdir(source_dir):
         raise ValueError(f"source directory does not exist: {source_dir}")
-    destination = args.to if args.to else args.source
+    destination = os.path.abspath(args.to if args.to else args.source)
     by = getattr(args, "by", "quarter")
-    log_path = configure_logging(source_dir, "archived.log")
     preflight_check_commands(["exiftool"])
     print_run_header(
         "archive",
@@ -83,20 +89,70 @@ def run_with_args(args):
             "source": args.source,
             "destination": destination,
             "by": by,
-            "dry_run": args.dry_run,
-            "workers": args.workers,
-            "log": log_path,
+            "apply": args.apply,
         },
     )
-    if not args.dry_run and not getattr(args, "yes", False):
-        print(f"[archive] will move files from '{args.source}' into '{destination}' (by {by})")
+    if args.apply and not getattr(args, "yes", False):
+        print(f"[archive] will move files from '{source_dir}' into '{destination}' (by {by})")
         if not confirm_proceed("Proceed with archive?"):
             print("[archive] aborted.")
             return
-    summary = sort_files(
-        args.source, destination, dry_run=args.dry_run, workers=args.workers, by=by
+    result = archive_files(
+        source_dir,
+        destination,
+        apply=args.apply,
+        by=by,
     )
+    summary = result["summary"]
     print_run_summary("archive", summary)
+    print_archive_groups(result["groups"], destination)
+    print_skipped_items(result["skipped"])
+    if not args.apply:
+        print()
+        print("Preview only. No files were moved. Pass --apply to archive previewed items.")
+
+
+def print_archive_groups(groups, destination):
+    print()
+    print("[archive] preview groups")
+    if not groups:
+        print("  none")
+        return
+    for group in groups:
+        date_range = format_group_date_range(group)
+        print()
+        print(f"{group['group']}  ({group['count']} file(s), {date_range})")
+        print(f"  -> {os.path.join(destination, group['group'])}")
+        if group["files"]:
+            for file_item in group["files"]:
+                print(f"  {format_archive_group_file(file_item)}")
+
+
+def format_group_date_range(group):
+    date_start = group.get("date_start")
+    date_end = group.get("date_end")
+    if date_start and date_end and date_start != date_end:
+        return f"{date_start} .. {date_end}"
+    if date_start:
+        return date_start
+    return "unknown"
+
+
+def format_archive_group_file(file_item):
+    file_name = file_item["file"]
+    if file_item.get("kind") == "sidecar":
+        paired_with = file_item.get("paired_with") or "unknown"
+        return f"[sidecar] {file_name}  -> {paired_with}"
+    return f"[media]   {file_name}"
+
+
+def print_skipped_items(skipped_items):
+    if not skipped_items:
+        return
+    print()
+    print("[archive] skipped")
+    for item in skipped_items:
+        print(f"  {item['file']}  ({item['reason']})")
 
 
 def main(argv=None):

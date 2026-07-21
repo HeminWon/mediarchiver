@@ -2,7 +2,7 @@ import json
 import shutil
 import subprocess
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 DEFAULT_COMMAND_TIMEOUT = 15
 _COMMAND_AVAILABILITY_CACHE = {}
@@ -55,8 +55,8 @@ class ExternalToolOutputError(ExternalToolError):
 class CommandLoadResult:
     tool_name: str
     data: Any = None
-    error_code: Optional[str] = None
-    error_message: Optional[str] = None
+    error_code: str | None = None
+    error_message: str | None = None
 
     @property
     def ok(self):

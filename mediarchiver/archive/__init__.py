@@ -1,11 +1,24 @@
 from mediarchiver.archive.cli import build_parser, main
-from mediarchiver.archive.service import archive_obj, get_quarter, get_subfolder, sort_files
+from mediarchiver.archive.service import (
+    ArchiveItem,
+    ArchiveObjects,
+    archive_files,
+    build_archive_item,
+    build_archive_items,
+    classify_archive_objects,
+    get_quarter,
+    get_subfolder,
+)
 
 __all__ = [
-    "archive_obj",
+    "ArchiveObjects",
+    "ArchiveItem",
+    "archive_files",
     "build_parser",
+    "build_archive_item",
+    "build_archive_items",
+    "classify_archive_objects",
     "get_quarter",
     "get_subfolder",
     "main",
-    "sort_files",
 ]

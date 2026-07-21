@@ -102,15 +102,15 @@ mediarchiver rename <source> --output /tmp/mediarchiver-plan
 
 ### Archive
 
-Move files into date-based directory structures:
+Preview or move files into date-based directory structures:
 
 ```bash
+mediarchiver archive <source>
 mediarchiver archive <source> --to <target>
 mediarchiver archive <source> --to <target> --by quarter
 mediarchiver archive <source> --to <target> --by month
 mediarchiver archive <source> --to <target> --by year
-mediarchiver archive <source> --to <target> --dry-run
-mediarchiver archive <source> --to <target> --workers 2
+mediarchiver archive <source> --to <target> --apply
 ```
 
 ## Output Files
@@ -118,12 +118,9 @@ mediarchiver archive <source> --to <target> --workers 2
 | File | Description |
 |---|---|
 | `rename.log` | Rename workflow log |
-| `archived.log` | Archive workflow log |
 | `rename-plan.json` | Rename plan written into the source directory by default, or into `--output` when specified |
 | `rename_operations.jsonl` | Structured rename operation records |
 | `rename_conflicts.jsonl` | Rename conflict records |
-| `archive_operations.jsonl` | Structured archive operation records |
-| `archive_conflicts.jsonl` | Archive conflict records |
 
 ## Documentation
 

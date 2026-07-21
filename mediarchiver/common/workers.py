@@ -39,4 +39,4 @@ def map_with_workers(
         results_iter = executor.map(func, items)
         if progress_desc:
             results_iter = tqdm(results_iter, total=len(items), desc=progress_desc)
-        return dict(zip(items, results_iter))
+        return dict(zip(items, results_iter, strict=False))

@@ -1,7 +1,7 @@
 import json
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -63,7 +63,7 @@ class OperationLogger:
         details=None,
     ):
         payload = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "action": action,
             "source": str(source),
             "destination": str(destination) if destination is not None else None,
