@@ -2,7 +2,8 @@ from mediarchiver.rename.inventory import SourceInventory
 from mediarchiver.rename.metadata import FileMetadataContext
 from mediarchiver.rename.plan import RenamePlanItem
 from mediarchiver.rename.rule import RuleFileSet
-from mediarchiver.rename.rules.apple.detectors import has_apple_marker, has_screenshot_marker
+from mediarchiver.rename.rules.apple.detectors.iphone import AppleIPhoneDetector
+from mediarchiver.rename.rules.apple.detectors.screenshot import AppleScreenshotDetector
 from mediarchiver.rename.rules.apple.presets.iphone import PRESET as IPHONE_PRESET
 from mediarchiver.rename.rules.apple.presets.screenshot import PRESET as SCREENSHOT_PRESET
 
@@ -55,7 +56,7 @@ class AppleIPhoneRule(BaseAppleRule):
     preset = IPHONE_PRESET
 
     def match(self, context: FileMetadataContext) -> tuple[str, ...]:
-        return match_apple_iphone(context)
+        return AppleIPhoneDetector().match_media(context)
 
 
 class AppleScreenshotRule(BaseAppleRule):
@@ -66,35 +67,7 @@ class AppleScreenshotRule(BaseAppleRule):
     preset = SCREENSHOT_PRESET
 
     def match(self, context: FileMetadataContext) -> tuple[str, ...]:
-        return match_apple_screenshot(context)
-
-
-def match_apple_iphone(context: FileMetadataContext) -> tuple[str, ...]:
-    metadata = context.exif_metadata or {}
-    reasons = []
-    make = str(metadata.get("Make", "")).strip().lower()
-    model = str(metadata.get("Model", "")).strip().lower()
-    host = str(metadata.get("HostComputer", "")).strip().lower()
-    if make == "apple":
-        reasons.append("make=apple")
-    if model.startswith("iphone"):
-        reasons.append("model=iphone")
-    if host.startswith("iphone"):
-        reasons.append("host=iphone")
-    return tuple(reasons) if any(reason.endswith("=iphone") for reason in reasons) else ()
-
-
-def match_apple_screenshot(context: FileMetadataContext) -> tuple[str, ...]:
-    if is_apple_screenshot(context):
-        return ("metadata=apple_screenshot",)
-    return ()
-
-
-def is_apple_screenshot(context: FileMetadataContext) -> bool:
-    metadata = context.exif_metadata or {}
-    return context.extension.lower() == ".png" and has_screenshot_marker(
-        metadata
-    ) and has_apple_marker(metadata)
+        return AppleScreenshotDetector().match_media(context)
 
 
 RULES = (AppleIPhoneRule(), AppleScreenshotRule())

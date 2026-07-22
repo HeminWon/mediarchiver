@@ -2,6 +2,7 @@ from mediarchiver.rename.inventory import SourceInventory
 from mediarchiver.rename.metadata import FileMetadataContext
 from mediarchiver.rename.plan import RenamePlanItem
 from mediarchiver.rename.rule import RuleFileSet
+from mediarchiver.rename.rules.sony.detectors.a7m4 import SonyA7M4Detector
 from mediarchiver.rename.rules.sony.presets.a7m4 import PRESET as A7M4_PRESET
 
 
@@ -13,13 +14,14 @@ class SonyA7M4Rule:
     required_tools = ("exiftool", "ffprobe")
 
     def __init__(self):
+        self.detector = SonyA7M4Detector()
         self.preset = A7M4_PRESET
 
     def collect_files(self, inventory: SourceInventory) -> RuleFileSet:
         sidecar_paths = [
             file_path
             for file_path in inventory.all_paths
-            if self.preset.candidate_sidecar_path(file_path)
+            if self.detector.candidate_sidecar_path(file_path)
         ]
         return RuleFileSet(
             source_dir=inventory.source_dir,
@@ -37,7 +39,7 @@ class SonyA7M4Rule:
         primary_items_by_key = {}
         for media_path in file_set.media_paths:
             context = contexts[media_path]
-            match_reasons = self.preset.match_media(context)
+            match_reasons = self.detector.match_media(context)
             if not match_reasons:
                 items.append(
                     RenamePlanItem(

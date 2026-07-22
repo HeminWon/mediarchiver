@@ -23,10 +23,13 @@ smoke:
     uv run --no-sync python -m mediarchiver archive --help
 
 build:
+    rm -f dist/mediarchiver-*.whl dist/mediarchiver-*.tar.gz
     UV_CACHE_DIR="${TMPDIR:-/tmp}/mediarchiver-uv-cache" uv build
 
 install-wheel: build
-    uv tool install --reinstall --force dist/mediarchiver-*.whl
+    set -- dist/mediarchiver-*.whl; \
+    wheel="$1"; \
+    uv tool install --reinstall --force --python 3.14 "mediarchiver @ file://$(pwd)/$wheel"
 
 uninstall-wheel:
     uv tool uninstall mediarchiver
