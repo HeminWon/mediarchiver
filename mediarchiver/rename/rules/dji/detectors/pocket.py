@@ -44,7 +44,6 @@ class PocketDetector:
         if metadata_contains_pocket4p(metadata):
             reasons.append("metadata=pocket4p")
         required_reasons = {
-            "filename=dji_timestamp_id_pattern",
             "metadata=dji",
             "metadata=pocket4p",
         }

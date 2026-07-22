@@ -3,6 +3,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from mediarchiver.rename.inventory import SourceInventory
 from mediarchiver.rename.metadata import FileMetadataContext
 from mediarchiver.rename.plan import RenamePlanItem
 
@@ -50,7 +51,7 @@ class RenameRule(Protocol):
     priority: int
     required_tools: tuple[str, ...]
 
-    def collect_files(self, source_dir: str, include_formatted: bool = False) -> RuleFileSet:
+    def collect_files(self, inventory: SourceInventory) -> RuleFileSet:
         ...
 
     def build_plan_items(

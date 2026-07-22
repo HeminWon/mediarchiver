@@ -1,24 +1,18 @@
 import logging
 import os
+from collections import Counter
 
 from tqdm import tqdm
 
 from mediarchiver.common.reporting import OperationLogger
 from mediarchiver.common.workers import map_with_workers, resolve_worker_count
-from mediarchiver.rename.metadata import build_file_metadata_context
-from mediarchiver.rename.naming import is_formatted_file_name
+from mediarchiver.rename.inventory import collect_source_inventory
+from mediarchiver.rename.metadata import build_file_metadata_context, get_context_load_error
 from mediarchiver.rename.plan import RENAME_PLAN_VERSION, RenamePlan, RenamePlanItem
 from mediarchiver.rename.registry import get_rule, list_rules
-from mediarchiver.rename.rule import normalize_rule_plan_item
+from mediarchiver.rename.rule import RuleFileSet, normalize_rule_plan_item
 
 MAX_CONTEXT_PREFETCH_WORKERS = 4
-DEFAULT_RENAME_PLAN_FILENAME = "rename-plan.json"
-IGNORED_SOURCE_NAMES = {
-    DEFAULT_RENAME_PLAN_FILENAME,
-    "rename.log",
-    "rename_operations.jsonl",
-    "archived.log",
-}
 
 
 def get_prefetch_workers(item_count, requested_workers=None):
@@ -44,27 +38,30 @@ def build_rename_plan(
     rule_id=None,
     workers=None,
     include_formatted=False,
+    observer=None,
 ):
     source_dir = os.path.abspath(source)
     if not os.path.isdir(source_dir):
         raise ValueError(f"source directory does not exist: {source_dir}")
 
     rules = select_rules(rule_id)
+    inventory = collect_source_inventory(
+        source_dir,
+        include_formatted=include_formatted,
+    )
     file_sets = [
-        (rule, rule.collect_files(source_dir, include_formatted=include_formatted))
+        (rule, rule.collect_files(inventory))
         for rule in rules
     ]
-    media_paths = sorted(
-        {
-            media_path
-            for _, file_set in file_sets
-            for media_path in file_set.media_paths
-        }
-    )
-    contexts = prefetch_file_contexts(media_paths, workers=workers)
-    items = []
+    scan_summary = summarize_scan(inventory, file_sets)
+    notify_observer(observer, "scan", scan_summary)
+    contexts = prefetch_file_contexts(inventory.media_paths, workers=workers)
+    valid_contexts, items = split_context_load_results(contexts)
+    metadata_summary = summarize_metadata(contexts, valid_contexts, items)
+    notify_observer(observer, "metadata", metadata_summary)
     for rule, file_set in file_sets:
-        rule_items = rule.build_plan_items(source_dir, contexts, file_set)
+        rule_file_set = filter_file_set_contexts(file_set, valid_contexts)
+        rule_items = rule.build_plan_items(source_dir, valid_contexts, rule_file_set)
         for item in rule_items:
             if rule_id is None and item.reason == "rule_not_matched":
                 continue
@@ -73,14 +70,13 @@ def build_rename_plan(
         items = select_highest_priority_same_brand_items(items)
     items.extend(
         build_unmatched_items(
-            source_dir,
+            inventory,
             items,
             rules,
-            include_formatted=include_formatted,
         )
     )
     if not include_formatted:
-        items.extend(build_already_formatted_items(source_dir, items))
+        items.extend(build_already_formatted_items(inventory, items))
     items = mark_source_rule_conflicts(items)
     items = mark_destination_conflicts(items)
     return RenamePlan(
@@ -92,6 +88,8 @@ def build_rename_plan(
             "rules": [rule.id for rule in rules],
             "workers": workers,
             "include_formatted": include_formatted,
+            "scan": scan_summary,
+            "metadata": metadata_summary,
         },
         items=items,
     )
@@ -103,11 +101,74 @@ def select_rules(rule_id=None):
     return list_rules()
 
 
-def build_unmatched_items(source_dir, items, rules, include_formatted=False):
+def notify_observer(observer, event, payload):
+    if observer is not None:
+        observer(event, payload)
+
+
+def summarize_scan(inventory, file_sets):
+    sidecar_paths = {
+        sidecar_path
+        for _, file_set in file_sets
+        for sidecar_path in file_set.sidecar_paths
+    }
+    return {
+        "files": len(inventory.all_paths),
+        "media": len(inventory.media_paths),
+        "sidecars": len(sidecar_paths),
+        "formatted": len(inventory.formatted_paths),
+        "ignored": len(inventory.ignored_paths),
+    }
+
+
+def summarize_metadata(contexts, valid_contexts, error_items):
+    failed_reasons = Counter(item.reason or "unknown" for item in error_items)
+    return {
+        "media": len(contexts),
+        "loaded": len(valid_contexts),
+        "failed": len(error_items),
+        "failed_reasons": dict(sorted(failed_reasons.items())),
+    }
+
+
+def split_context_load_results(contexts):
+    valid_contexts = {}
+    error_items = []
+    for file_path, context in contexts.items():
+        load_error = get_context_load_error(context)
+        if load_error is None:
+            valid_contexts[file_path] = context
+            continue
+        error_items.append(
+            RenamePlanItem(
+                source=file_path,
+                destination=None,
+                action="rename",
+                status="skipped",
+                reason=load_error["reason"],
+                details=load_error.get("details") or {},
+            )
+        )
+    return valid_contexts, error_items
+
+
+def filter_file_set_contexts(file_set, contexts):
+    return RuleFileSet(
+        source_dir=file_set.source_dir,
+        media_paths=[
+            media_path
+            for media_path in file_set.media_paths
+            if media_path in contexts
+        ],
+        sidecar_paths=file_set.sidecar_paths,
+    )
+
+
+def build_unmatched_items(inventory, items, rules):
     planned_sources = {item.source for item in items}
     rule_ids = [rule.id for rule in rules]
     unmatched_items = []
-    for file_path in collect_source_files(source_dir, include_formatted=include_formatted):
+    for file_path in inventory.all_paths:
         if file_path in planned_sources:
             continue
         unmatched_items.append(
@@ -156,10 +217,10 @@ def select_highest_priority_same_brand_items(items):
     return [item for index, item in enumerate(items) if index not in shadowed_indexes]
 
 
-def build_already_formatted_items(source_dir, items):
+def build_already_formatted_items(inventory, items):
     planned_sources = {item.source for item in items}
     formatted_items = []
-    for file_path in collect_formatted_files(source_dir):
+    for file_path in inventory.formatted_paths:
         if file_path in planned_sources:
             continue
         formatted_items.append(
@@ -173,37 +234,6 @@ def build_already_formatted_items(source_dir, items):
             )
         )
     return formatted_items
-
-
-def collect_source_files(source_dir, include_formatted=False):
-    file_paths = []
-    for name in sorted(os.listdir(source_dir)):
-        file_path = os.path.join(source_dir, name)
-        if not os.path.isfile(file_path):
-            continue
-        if is_ignored_source_name(name):
-            continue
-        if not include_formatted and is_formatted_file_name(name):
-            continue
-        file_paths.append(file_path)
-    return file_paths
-
-
-def collect_formatted_files(source_dir):
-    file_paths = []
-    for name in sorted(os.listdir(source_dir)):
-        file_path = os.path.join(source_dir, name)
-        if not os.path.isfile(file_path):
-            continue
-        if is_ignored_source_name(name):
-            continue
-        if is_formatted_file_name(name):
-            file_paths.append(file_path)
-    return file_paths
-
-
-def is_ignored_source_name(name):
-    return name.startswith(".") or name in IGNORED_SOURCE_NAMES
 
 
 def mark_source_rule_conflicts(items):

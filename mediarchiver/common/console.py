@@ -1,6 +1,6 @@
 def _print_lines(lines):
     for line in lines:
-        print(line)
+        print(line, flush=True)
 
 
 def confirm_proceed(prompt):

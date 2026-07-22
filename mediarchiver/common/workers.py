@@ -28,7 +28,11 @@ def map_with_workers(
 ):
     if not items:
         return {}
-    results_iter = map(func, items)
     if progress_desc:
-        results_iter = tqdm(results_iter, total=len(items), desc=progress_desc)
-    return dict(zip(items, results_iter, strict=False))
+        results = {}
+        with tqdm(total=len(items), desc=progress_desc) as progress:
+            for item in items:
+                results[item] = func(item)
+                progress.update(1)
+        return results
+    return {item: func(item) for item in items}

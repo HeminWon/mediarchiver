@@ -1,6 +1,8 @@
 import argparse
 import os
+import re
 import sys
+import tempfile
 
 from mediarchiver.common.console import (
     confirm_proceed,
@@ -20,6 +22,7 @@ from mediarchiver.rename.reports import print_issue_summary, write_issue_jsonl
 from mediarchiver.rename.service import apply_rename_plan, build_rename_plan
 
 DEFAULT_PLAN_FILENAME = "rename-plan.json"
+PREVIEW_LIMIT = 50
 RENAME_USAGE = (
     "%(prog)s <source> [--apply] [--output DIR]\n"
     "       %(prog)s --list-rules"
@@ -57,7 +60,7 @@ def configure_parser(parser):
         type=str,
         default=None,
         metavar="DIR",
-        help=f"write {DEFAULT_PLAN_FILENAME} into DIR",
+        help=f"write {DEFAULT_PLAN_FILENAME} and logs into DIR",
     )
     return parser
 
@@ -98,8 +101,12 @@ def validate_args(parser, args):
         )
 
 
-def default_plan_path(source):
-    return os.path.join(os.path.abspath(source), DEFAULT_PLAN_FILENAME)
+def default_artifact_dir(source):
+    source_name = os.path.basename(os.path.abspath(source)) or "source"
+    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", source_name).strip(".-") or "source"
+    parent_dir = os.path.join(tempfile.gettempdir(), "mediarchiver", "rename")
+    os.makedirs(parent_dir, exist_ok=True)
+    return tempfile.mkdtemp(prefix=f"{safe_name}-", dir=parent_dir)
 
 
 def print_rules():
@@ -107,11 +114,45 @@ def print_rules():
         print(f"{rule.id}\t{rule.label}\t{rule.description}")
 
 
-def print_preview(plan):
-    for item in plan.items:
-        if item.status == "ready":
-            print(os.path.basename(item.source))
-            print(f"  -> {os.path.basename(item.destination)}")
+def print_build_event(event, payload):
+    if event == "scan":
+        print()
+        print("[rename] scan", flush=True)
+        print(f"- files: {payload.get('files', 0)}", flush=True)
+        print(f"- media: {payload.get('media', 0)}", flush=True)
+        print(f"- sidecars: {payload.get('sidecars', 0)}", flush=True)
+        print(f"- formatted: {payload.get('formatted', 0)}", flush=True)
+        print(f"- ignored: {payload.get('ignored', 0)}", flush=True)
+        return
+    if event == "metadata":
+        print()
+        print("[rename] metadata", flush=True)
+        print(f"- media: {payload.get('media', 0)}", flush=True)
+        print(f"- loaded: {payload.get('loaded', 0)}", flush=True)
+        print(f"- failed: {payload.get('failed', 0)}", flush=True)
+        failed_reasons = payload.get("failed_reasons") or {}
+        if failed_reasons:
+            reasons = ", ".join(
+                f"{reason}={count}"
+                for reason, count in failed_reasons.items()
+            )
+            print(f"- failed reasons: {reasons}", flush=True)
+
+
+def print_preview(plan, limit=PREVIEW_LIMIT):
+    ready_items = [item for item in plan.items if item.status == "ready"]
+    if not ready_items:
+        return
+    print()
+    print("[rename] preview", flush=True)
+    for item in ready_items[:limit]:
+        source_name = os.path.basename(item.source)
+        destination_name = os.path.basename(item.destination)
+        print(f"- {source_name}", flush=True)
+        print(f"  -> {destination_name}", flush=True)
+    remaining = len(ready_items) - limit
+    if remaining > 0:
+        print(f"- ... {remaining} more ready item(s); see plan for full list", flush=True)
 
 
 def run_with_args(args):
@@ -124,16 +165,14 @@ def run_with_args(args):
         raise ValueError(f"source directory does not exist: {source_dir}")
     rules = list_rules()
     rule_ids = [rule.id for rule in rules]
-    log_path = configure_logging(source_dir, "rename.log")
     required_tools = sorted(
         {tool for rule in rules for tool in rule.required_tools}
     )
     preflight_check_commands(required_tools)
-    plan_path = (
-        os.path.join(os.path.abspath(args.output), DEFAULT_PLAN_FILENAME)
-        if args.output
-        else default_plan_path(source_dir)
-    )
+    artifact_dir = os.path.abspath(args.output) if args.output else default_artifact_dir(source_dir)
+    os.makedirs(artifact_dir, exist_ok=True)
+    log_path = configure_logging(artifact_dir, "rename.log")
+    plan_path = os.path.join(artifact_dir, DEFAULT_PLAN_FILENAME)
     print_run_header(
         "rename",
         {
@@ -144,13 +183,15 @@ def run_with_args(args):
     )
     plan = build_rename_plan(
         source_dir,
+        observer=print_build_event,
     )
     write_rename_plan(plan, plan_path)
     print_preview(plan)
+    print()
     print_plan_summary("rename", plan.summary)
     print(f"- plan: {plan_path}")
     print(f"- log: {log_path}")
-    issue_jsonl_path = write_issue_jsonl(plan)
+    issue_jsonl_path = write_issue_jsonl(plan, artifact_dir)
     print_issue_summary(plan, issue_jsonl_path)
 
     if not args.apply:

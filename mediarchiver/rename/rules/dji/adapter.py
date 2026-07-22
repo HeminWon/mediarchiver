@@ -1,8 +1,7 @@
-import os
 from pathlib import Path
 
+from mediarchiver.rename.inventory import SourceInventory
 from mediarchiver.rename.metadata import FileMetadataContext
-from mediarchiver.rename.naming import is_formatted_file_name
 from mediarchiver.rename.plan import RenamePlanItem
 from mediarchiver.rename.rule import RuleFileSet
 from mediarchiver.rename.rules.dji.detectors.pocket import PocketDetector
@@ -21,23 +20,15 @@ class DjiPocket4PRule:
         self.detector = PocketDetector()
         self.preset = POCKET4P_PRESET
 
-    def collect_files(self, source_dir: str, include_formatted: bool = False) -> RuleFileSet:
-        media_paths = []
-        sidecar_paths = []
-        for name in sorted(os.listdir(source_dir)):
-            file_path = os.path.join(source_dir, name)
-            if not os.path.isfile(file_path):
-                continue
-            if not include_formatted and is_formatted_file_name(name):
-                continue
-            if self.detector.candidate_sidecar_path(file_path):
-                sidecar_paths.append(file_path)
-                continue
-            if self.detector.candidate_media_path(file_path):
-                media_paths.append(file_path)
+    def collect_files(self, inventory: SourceInventory) -> RuleFileSet:
+        sidecar_paths = [
+            file_path
+            for file_path in inventory.all_paths
+            if self.detector.candidate_sidecar_path(file_path)
+        ]
         return RuleFileSet(
-            source_dir=source_dir,
-            media_paths=media_paths,
+            source_dir=inventory.source_dir,
+            media_paths=list(inventory.media_paths),
             sidecar_paths=sidecar_paths,
         )
 

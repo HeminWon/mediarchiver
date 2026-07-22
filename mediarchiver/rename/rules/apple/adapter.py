@@ -1,8 +1,5 @@
-import os
-
-from mediarchiver.common.tool import is_img, is_vid
+from mediarchiver.rename.inventory import SourceInventory
 from mediarchiver.rename.metadata import FileMetadataContext
-from mediarchiver.rename.naming import is_formatted_file_name
 from mediarchiver.rename.plan import RenamePlanItem
 from mediarchiver.rename.rule import RuleFileSet
 from mediarchiver.rename.rules.apple.detectors import has_apple_marker, has_screenshot_marker
@@ -14,19 +11,10 @@ class BaseAppleRule:
     required_tools = ("exiftool", "ffprobe")
     preset = None
 
-    def collect_files(self, source_dir: str, include_formatted: bool = False) -> RuleFileSet:
-        media_paths = []
-        for name in sorted(os.listdir(source_dir)):
-            file_path = os.path.join(source_dir, name)
-            if not os.path.isfile(file_path):
-                continue
-            if not include_formatted and is_formatted_file_name(name):
-                continue
-            if is_img(file_path) or is_vid(file_path):
-                media_paths.append(file_path)
+    def collect_files(self, inventory: SourceInventory) -> RuleFileSet:
         return RuleFileSet(
-            source_dir=source_dir,
-            media_paths=media_paths,
+            source_dir=inventory.source_dir,
+            media_paths=list(inventory.media_paths),
             sidecar_paths=[],
         )
 

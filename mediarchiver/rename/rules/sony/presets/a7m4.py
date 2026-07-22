@@ -41,10 +41,9 @@ class SonyA7M4Preset:
 
     def match_media(self, context: FileMetadataContext) -> tuple[str, ...]:
         metadata = context.exif_metadata or {}
-        media_kind = media_kind_from_suffix(context.file_path)
-        if media_kind == "photo":
+        if context.is_image:
             return match_photo(metadata)
-        if media_kind == "video":
+        if context.is_video:
             return match_video(metadata)
         return ()
 

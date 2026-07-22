@@ -7,7 +7,7 @@ ISSUE_STATUSES = {"skipped", "conflict", "invalid"}
 FORMATTED_REASONS = {"already_formatted", "already_named"}
 
 
-def write_issue_jsonl(plan):
+def write_issue_jsonl(plan, output_dir=None):
     issue_items = [
         item
         for item in plan.items
@@ -16,7 +16,9 @@ def write_issue_jsonl(plan):
     if not issue_items:
         return None
 
-    log_path = Path("/tmp") / f"mediarchiver-rename-issues-{os.getpid()}.jsonl"
+    parent_dir = Path(output_dir) if output_dir else Path("/tmp")
+    parent_dir.mkdir(parents=True, exist_ok=True)
+    log_path = parent_dir / f"mediarchiver-rename-issues-{os.getpid()}.jsonl"
     with log_path.open("w", encoding="utf-8") as file:
         for item in issue_items:
             file.write(json.dumps(issue_item_payload(item), ensure_ascii=False) + "\n")
