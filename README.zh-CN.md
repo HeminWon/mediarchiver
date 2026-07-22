@@ -26,9 +26,23 @@
 - 大文件夹按年、季度、月份归档前，很难快速确认素材范围。
 - 批量文件操作风险高，需要默认预览和显式执行来降低误操作。
 
-## 下载
+## 安装
 
-从 GitHub Releases 下载最新二进制：
+推荐通过 release wheel 使用 `uv tool install` 安装。它会创建隔离的工具环境，并暴露
+`mediarchiver` 命令：
+
+```bash
+uv tool install https://github.com/heminwon/mediarchiver/releases/download/v0.1.2/mediarchiver-0.1.2-py3-none-any.whl
+```
+
+本地开发产物可以这样安装：
+
+```bash
+uv build
+uv tool install --reinstall dist/mediarchiver-*.whl
+```
+
+GitHub Releases 也会继续发布独立二进制，适合不想使用 Python 工具安装器的用户：
 
 ```text
 https://github.com/heminwon/mediarchiver/releases

@@ -26,22 +26,35 @@
 - Large folders are hard to verify before moving into year, quarter, or month archives.
 - Batch file operations are risky without a readable preview and explicit apply step.
 
-## Download
+## Install
 
-Download the latest binary from GitHub Releases:
+The recommended install path is the release wheel with `uv tool install`.
+It creates an isolated tool environment and exposes the `mediarchiver` command:
+
+```bash
+uv tool install https://github.com/heminwon/mediarchiver/releases/download/v0.1.2/mediarchiver-0.1.2-py3-none-any.whl
+```
+
+For local development artifacts:
+
+```bash
+uv build
+uv tool install --reinstall dist/mediarchiver-*.whl
+```
+
+Standalone binaries are also published on GitHub Releases for users who do not
+want a Python tool installer:
 
 ```text
 https://github.com/heminwon/mediarchiver/releases
 ```
-
-Choose the asset for your platform:
 
 ```text
 mediarchiver-darwin-arm64.tar.gz
 mediarchiver-linux-x86_64.tar.gz
 ```
 
-Then unpack and put `mediarchiver` somewhere in your `PATH`.
+Unpack the asset for your platform and put `mediarchiver` somewhere in your `PATH`.
 
 ## Requirements
 

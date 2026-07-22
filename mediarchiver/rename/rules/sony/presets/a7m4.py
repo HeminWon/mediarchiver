@@ -11,12 +11,42 @@ from mediarchiver.rename.rule_builder import RenameRuleError
 from mediarchiver.rename.rule_builder import build_media_plan_item as build_standard_media_plan_item
 
 DEVICE_UNIT = "Sony-A7M4"
+SONY_CLIP_PATTERN = re.compile(r"^C\d{4}\.(?:MP4|MOV)$", re.IGNORECASE)
+SONY_XML_PATTERN = re.compile(r"^C\d{4}M\d{2}\.XML$", re.IGNORECASE)
+SONY_PHOTO_PATTERN = re.compile(r"^DSC\d+\.(?:ARW|JPE?G)$", re.IGNORECASE)
+SONY_PHOTO_SIDECAR_PATTERN = re.compile(r"^DSC\d+\.(?:XMP|ACR)$", re.IGNORECASE)
+VIDEO_SUFFIXES = {".mp4", ".mov"}
+PHOTO_SUFFIXES = {".arw", ".jpg", ".jpeg"}
+PrimaryKey = tuple[str, str]
 
 
 class SonyA7M4Preset:
     id = "a7m4"
     label = "Sony A7M4"
     device_unit = DEVICE_UNIT
+
+    def candidate_media_path(self, file_path: str) -> bool:
+        name = Path(file_path).name
+        media_kind = media_kind_from_suffix(file_path)
+        if media_kind == "video" and SONY_CLIP_PATTERN.match(name):
+            return True
+        return media_kind == "photo" and SONY_PHOTO_PATTERN.match(name) is not None
+
+    def candidate_sidecar_path(self, file_path: str) -> bool:
+        name = Path(file_path).name
+        return (
+            SONY_XML_PATTERN.match(name) is not None
+            or SONY_PHOTO_SIDECAR_PATTERN.match(name) is not None
+        )
+
+    def match_media(self, context: FileMetadataContext) -> tuple[str, ...]:
+        metadata = context.exif_metadata or {}
+        media_kind = media_kind_from_suffix(context.file_path)
+        if media_kind == "photo":
+            return match_photo(metadata)
+        if media_kind == "video":
+            return match_video(metadata)
+        return ()
 
     def build_media_item(
         self,
@@ -31,15 +61,12 @@ class SonyA7M4Preset:
     def build_sidecar_item(
         self,
         file_path: str,
-        primary_items_by_id: dict[str, RenamePlanItem],
+        primary_items_by_key: dict[PrimaryKey, RenamePlanItem],
     ) -> RenamePlanItem:
-        return build_sidecar_plan_item(file_path, primary_items_by_id)
+        return build_sidecar_plan_item(file_path, primary_items_by_key)
 
-    def original_id_from_name(self, file_name: str):
-        try:
-            return extract_original_id(file_name)[0]
-        except RenameRuleError:
-            return None
+    def primary_key_from_name(self, file_name: str):
+        return primary_key_from_name(file_name)
 
 
 PRESET = SonyA7M4Preset()
@@ -51,17 +78,21 @@ def build_media_plan_item(source_dir: str, context: FileMetadataContext) -> Rena
 
 def build_sidecar_plan_item(
     file_path: str,
-    primary_items_by_id: dict[str, RenamePlanItem],
+    primary_items_by_key: dict[PrimaryKey, RenamePlanItem],
 ) -> RenamePlanItem:
     source_path = Path(file_path)
-    original_id, sidecar_rule, sidecar_type = extract_sidecar_info(source_path.name)
+    primary_key, original_id, sidecar_rule, sidecar_type = extract_sidecar_info(
+        source_path.name
+    )
     details = {
         "sidecar_rule": sidecar_rule,
         "sidecar_type": sidecar_type,
         "original_id": original_id,
         "original_id_source": "filename",
     }
-    primary_item = primary_items_by_id.get(original_id)
+    primary_item = (
+        primary_items_by_key.get(primary_key) if primary_key is not None else None
+    )
     if primary_item is None:
         return RenamePlanItem(
             source=file_path,
@@ -156,6 +187,25 @@ def extract_original_id(file_name: str):
     raise RenameRuleError("missing_original_id", {"file_name": file_name})
 
 
+def media_kind_from_suffix(file_path: str):
+    suffix = Path(file_path).suffix.lower()
+    if suffix in VIDEO_SUFFIXES:
+        return "video"
+    if suffix in PHOTO_SUFFIXES:
+        return "photo"
+    return None
+
+
+def primary_key_from_name(file_name: str) -> PrimaryKey | None:
+    clip_match = re.match(r"C(\d{4})\.(?:MP4|MOV)$", file_name, re.IGNORECASE)
+    if clip_match:
+        return "video", clip_match.group(1)
+    photo_match = re.match(r"DSC(\d+)\.(?:ARW|JPE?G)$", file_name, re.IGNORECASE)
+    if photo_match:
+        return "photo", photo_match.group(1)[-4:]
+    return None
+
+
 def original_id_from_context(context: FileMetadataContext):
     try:
         return extract_original_id(context.file_name)
@@ -166,12 +216,44 @@ def original_id_from_context(context: FileMetadataContext):
 def extract_sidecar_info(file_name: str):
     xml_match = re.match(r"C(\d{4})M\d{2}\.XML$", file_name, re.IGNORECASE)
     if xml_match:
-        return xml_match.group(1), "sony_xml", "non_real_time_metadata"
+        original_id = xml_match.group(1)
+        return ("video", original_id), original_id, "sony_xml", "non_real_time_metadata"
     photo_match = re.match(r"DSC(\d+)\.(XMP|ACR)$", file_name, re.IGNORECASE)
     if photo_match:
+        original_id = photo_match.group(1)[-4:]
         sidecar_ext = photo_match.group(2).lower()
-        return photo_match.group(1)[-4:], f"sony_{sidecar_ext}", f"photo_{sidecar_ext}"
-    return None, "sony_sidecar", "unknown"
+        return (
+            ("photo", original_id),
+            original_id,
+            f"sony_{sidecar_ext}",
+            f"photo_{sidecar_ext}",
+        )
+    return None, None, "sony_sidecar", "unknown"
+
+
+def match_video(metadata: dict) -> tuple[str, ...]:
+    reasons = []
+    manufacturer = str(metadata.get("DeviceManufacturer", "")).strip().lower()
+    model_name = str(metadata.get("DeviceModelName", "")).strip().lower()
+    major_brand = str(metadata.get("MajorBrand", "")).strip().lower()
+    if manufacturer == "sony":
+        reasons.append("metadata=device_manufacturer_sony")
+    if model_name == "ilce-7m4":
+        reasons.append("metadata=device_model_ilce_7m4")
+    if major_brand == "xavc":
+        reasons.append("metadata=major_brand_xavc")
+    return tuple(reasons) if "metadata=device_model_ilce_7m4" in reasons else ()
+
+
+def match_photo(metadata: dict) -> tuple[str, ...]:
+    reasons = []
+    make = str(metadata.get("Make", "")).strip().lower()
+    model = str(metadata.get("Model", "")).strip().lower()
+    if make == "sony":
+        reasons.append("metadata=make_sony")
+    if model == "ilce-7m4":
+        reasons.append("metadata=model_ilce_7m4")
+    return tuple(reasons) if "metadata=model_ilce_7m4" in reasons else ()
 
 
 def build_tech_tags(context: FileMetadataContext):

@@ -2,7 +2,7 @@
 
 ## Python
 
-The project is pinned to Python 3.11:
+The project is pinned to Python 3.14:
 
 ```text
 .python-version
@@ -24,8 +24,11 @@ uv run --no-sync python -m mediarchiver --version
 just setup
 just check
 just smoke
+just install-wheel
+just uninstall-wheel
 just binary
-just install-local
+just install-binary
+just uninstall-binary
 ```
 
 `just check` runs lint only. There is currently no test suite configured.
@@ -35,7 +38,23 @@ just install-local
 Build Python distribution artifacts:
 
 ```bash
-uv build
+just build
+```
+
+Build the wheel and install it as an isolated uv tool:
+
+```bash
+just install-wheel
+mediarchiver --version
+```
+
+The recipe uses `uv tool install --reinstall --force` so the project's console
+scripts are replaced cleanly during local development.
+
+Uninstall the uv tool:
+
+```bash
+just uninstall-wheel
 ```
 
 Build a local single-file binary:
@@ -48,7 +67,7 @@ just binary
 Install the local binary:
 
 ```bash
-just install-local
+just install-binary
 mediarchiver --version
 ```
 
@@ -61,8 +80,12 @@ By default this installs to:
 Override the install target when needed:
 
 ```bash
-LOCAL_BIN=/usr/local/bin just install-local
+LOCAL_BIN=/usr/local/bin just install-binary
 ```
+
+Avoid keeping both the uv tool and copied binary installed long-term unless you
+are intentionally testing PATH precedence. `which mediarchiver` shows the one
+that will run first.
 
 ## Package Index
 
@@ -73,6 +96,9 @@ UV_CACHE_DIR=.uv-cache
 UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
+`just build` uses a temporary uv cache outside the source tree so wheel and
+sdist builds do not warn about cache files being inside the distribution root.
+
 Override the package index when needed:
 
 ```bash
@@ -81,7 +107,7 @@ UV_DEFAULT_INDEX=https://pypi.org/simple just binary
 
 ## GitHub Actions
 
-CI runs on Python 3.11 for Linux and macOS:
+CI runs on Python 3.14 for Linux and macOS:
 
 ```text
 .github/workflows/ci.yml
@@ -98,6 +124,15 @@ The release workflow builds:
 - wheel and sdist
 - Linux single-file binary
 - macOS single-file binary
+
+The wheel is the recommended installation artifact:
+
+```bash
+just install-wheel
+```
+
+PyInstaller binaries are supplemental release artifacts for users who prefer a
+download-and-run executable.
 
 Binary builds use PyInstaller with:
 

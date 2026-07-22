@@ -1,17 +1,10 @@
 import os
-import re
 
-from mediarchiver.common.tool import is_img, is_vid
 from mediarchiver.rename.metadata import FileMetadataContext
 from mediarchiver.rename.naming import is_formatted_file_name
 from mediarchiver.rename.plan import RenamePlanItem
 from mediarchiver.rename.rule import RuleFileSet
 from mediarchiver.rename.rules.sony.presets.a7m4 import PRESET as A7M4_PRESET
-
-SONY_CLIP_PATTERN = re.compile(r"^C\d{4}\.(?:MP4|MOV)$", re.IGNORECASE)
-SONY_XML_PATTERN = re.compile(r"^C\d{4}M\d{2}\.XML$", re.IGNORECASE)
-SONY_PHOTO_PATTERN = re.compile(r"^DSC\d+\.(?:ARW|JPE?G)$", re.IGNORECASE)
-SONY_PHOTO_SIDECAR_PATTERN = re.compile(r"^DSC\d+\.(?:XMP|ACR)$", re.IGNORECASE)
 
 
 class SonyA7M4Rule:
@@ -33,13 +26,10 @@ class SonyA7M4Rule:
                 continue
             if not include_formatted and is_formatted_file_name(name):
                 continue
-            if SONY_XML_PATTERN.match(name) or SONY_PHOTO_SIDECAR_PATTERN.match(name):
+            if self.preset.candidate_sidecar_path(file_path):
                 sidecar_paths.append(file_path)
                 continue
-            if is_vid(file_path) and SONY_CLIP_PATTERN.match(name):
-                media_paths.append(file_path)
-                continue
-            if is_img(file_path) and SONY_PHOTO_PATTERN.match(name):
+            if self.preset.candidate_media_path(file_path):
                 media_paths.append(file_path)
         return RuleFileSet(
             source_dir=source_dir,
@@ -54,10 +44,10 @@ class SonyA7M4Rule:
         file_set: RuleFileSet,
     ) -> list[RenamePlanItem]:
         items = []
-        primary_items_by_id = {}
+        primary_items_by_key = {}
         for media_path in file_set.media_paths:
             context = contexts[media_path]
-            match_reasons = match_sony_a7m4(context)
+            match_reasons = self.preset.match_media(context)
             if not match_reasons:
                 items.append(
                     RenamePlanItem(
@@ -72,45 +62,15 @@ class SonyA7M4Rule:
                 continue
             item = self.preset.build_media_item(source_dir, context, match_reasons)
             items.append(item)
-            original_id = self.preset.original_id_from_name(context.file_name)
-            if original_id is not None and original_id not in primary_items_by_id:
-                primary_items_by_id[original_id] = item
+            primary_key = self.preset.primary_key_from_name(context.file_name)
+            if primary_key is not None and primary_key not in primary_items_by_key:
+                primary_items_by_key[primary_key] = item
 
         for sidecar_path in file_set.sidecar_paths:
-            items.append(self.preset.build_sidecar_item(sidecar_path, primary_items_by_id))
+            items.append(
+                self.preset.build_sidecar_item(sidecar_path, primary_items_by_key)
+            )
         return items
-
-
-def match_sony_a7m4(context: FileMetadataContext) -> tuple[str, ...]:
-    metadata = context.exif_metadata or {}
-    if context.is_image:
-        return match_sony_a7m4_photo(metadata)
-    return match_sony_a7m4_video(metadata)
-
-
-def match_sony_a7m4_video(metadata: dict) -> tuple[str, ...]:
-    reasons = []
-    manufacturer = str(metadata.get("DeviceManufacturer", "")).strip().lower()
-    model_name = str(metadata.get("DeviceModelName", "")).strip().lower()
-    major_brand = str(metadata.get("MajorBrand", "")).strip().lower()
-    if manufacturer == "sony":
-        reasons.append("metadata=device_manufacturer_sony")
-    if model_name == "ilce-7m4":
-        reasons.append("metadata=device_model_ilce_7m4")
-    if major_brand == "xavc":
-        reasons.append("metadata=major_brand_xavc")
-    return tuple(reasons) if "metadata=device_model_ilce_7m4" in reasons else ()
-
-
-def match_sony_a7m4_photo(metadata: dict) -> tuple[str, ...]:
-    reasons = []
-    make = str(metadata.get("Make", "")).strip().lower()
-    model = str(metadata.get("Model", "")).strip().lower()
-    if make == "sony":
-        reasons.append("metadata=make_sony")
-    if model == "ilce-7m4":
-        reasons.append("metadata=model_ilce_7m4")
-    return tuple(reasons) if "metadata=model_ilce_7m4" in reasons else ()
 
 
 RULE = SonyA7M4Rule()
