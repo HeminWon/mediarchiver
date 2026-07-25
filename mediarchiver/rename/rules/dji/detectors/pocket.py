@@ -8,13 +8,27 @@ from mediarchiver.rename.metadata import FileMetadataContext
 
 DJI_FILENAME_PATTERN = re.compile(r"^DJI_\d{14}_\d{4}_.+\.[^.]+$", re.IGNORECASE)
 DJI_SIDE_SUFFIXES = {".lrf"}
+DJI_METADATA_FIELDS = (
+    "Encoder",
+    "Category",
+    "DjiCameraCameraModel",
+    "DjiCameraCameraSerialNumber",
+    "DjiCameraSupVersion",
+    "DjiCameraLensType",
+    "DjiCameraColorGammaSxS",
+    "DjiCameraExposureIndexAsa",
+    "DjiCameraWhiteBalanceKelvin",
+    "DjiCameraWhiteBalanceTintCc",
+)
+POCKET4P_METADATA_FIELDS = (
+    "Encoder",
+    "Category",
+    "DjiCameraCameraModel",
+)
 POCKET4P_MARKERS = (
-    "pocket4p",
-    "pocket4pro",
-    "pocket4",
-    "pocket 4p",
-    "pocket 4 pro",
-    "pocket 4",
+    "osmo pocket 4p",
+    "dvtm_osmo_pocket_4",
+    "PP-041",
 )
 
 
@@ -51,30 +65,20 @@ class PocketDetector:
 
 
 def metadata_contains_dji(metadata: dict) -> bool:
-    fields = (
-        "Make",
-        "Model",
-        "Software",
-        "DjiCameraColorGammaSxS",
-        "DjiCameraColorMode",
-    )
-    values = [str(metadata.get(field, "")) for field in fields if metadata.get(field) is not None]
+    values = [
+        str(metadata.get(field, ""))
+        for field in DJI_METADATA_FIELDS
+        if metadata.get(field) is not None
+    ]
     if any("dji" in value.lower() for value in values):
         return True
-    return any(field in metadata for field in ("DjiCameraColorGammaSxS", "DjiCameraColorMode"))
+    return any(field in metadata for field in DJI_METADATA_FIELDS if field.startswith("DjiCamera"))
 
 
 def metadata_contains_pocket4p(metadata: dict) -> bool:
-    fields = (
-        "Model",
-        "DeviceModelName",
-        "ProductName",
-        "CameraModelName",
-        "Software",
-    )
     values = [
         normalize_model_marker(str(metadata.get(field, "")))
-        for field in fields
+        for field in POCKET4P_METADATA_FIELDS
         if metadata.get(field) is not None
     ]
     markers = [normalize_model_marker(marker) for marker in POCKET4P_MARKERS]
