@@ -1,4 +1,5 @@
 import re
+from decimal import Decimal, InvalidOperation
 
 RENAME_CAPTURE_DATE_FIELDS = (
     "SubSecDateTimeOriginal",
@@ -32,3 +33,20 @@ def first_formatted_metadata_date(metadata, fields=RENAME_CAPTURE_DATE_FIELDS):
         if formatted is not None:
             return formatted, f"metadata:{field}"
     return None, None
+
+
+def formatted_fps(frame_rate):
+    if not frame_rate:
+        return None
+    try:
+        numerator, denominator = frame_rate.split("/", 1)
+        denominator_int = int(denominator)
+        if denominator_int == 0:
+            return None
+        fps = Decimal(numerator) / Decimal(denominator_int)
+    except (ValueError, InvalidOperation):
+        return None
+
+    value = fps.quantize(Decimal("0.01")).normalize()
+    text = format(value, "f")
+    return text.rstrip("0").rstrip(".") if "." in text else text

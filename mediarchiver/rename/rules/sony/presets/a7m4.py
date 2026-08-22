@@ -1,10 +1,9 @@
 import os
 import re
-from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from mediarchiver.rename.metadata import FileMetadataContext
-from mediarchiver.rename.naming import formatted_date
+from mediarchiver.rename.naming import formatted_date, formatted_fps
 from mediarchiver.rename.original_id import fallback_original_id
 from mediarchiver.rename.plan import RenamePlanItem
 from mediarchiver.rename.rule_builder import RenameRuleError
@@ -248,17 +247,12 @@ def resolution_tag(video_stream: dict):
 
 def fps_tag(video_stream: dict):
     frame_rate = video_stream.get("avg_frame_rate") or video_stream.get("r_frame_rate")
-    if not frame_rate:
-        raise RenameRuleError("missing_frame_rate", {"video_stream": video_stream})
-    try:
-        numerator, denominator = frame_rate.split("/", 1)
-        denominator_int = int(denominator)
-        if denominator_int == 0:
-            raise ZeroDivisionError
-        fps = Decimal(numerator) / Decimal(denominator_int)
-    except (ValueError, ZeroDivisionError, InvalidOperation) as exc:
-        raise RenameRuleError("invalid_frame_rate", {"frame_rate": frame_rate}) from exc
-    return f"{fps.quantize(Decimal('0.01')).normalize()}FPS"
+    fps = formatted_fps(frame_rate)
+    if fps is None:
+        if not frame_rate:
+            raise RenameRuleError("missing_frame_rate", {"video_stream": video_stream})
+        raise RenameRuleError("invalid_frame_rate", {"frame_rate": frame_rate})
+    return f"{fps}FPS"
 
 
 def codec_tag(video_stream: dict):

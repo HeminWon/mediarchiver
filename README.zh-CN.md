@@ -32,7 +32,7 @@
 `mediarchiver` 命令：
 
 ```bash
-uv tool install https://github.com/heminwon/mediarchiver/releases/download/v0.1.3/mediarchiver-0.1.3-py3-none-any.whl
+uv tool install https://github.com/heminwon/mediarchiver/releases/download/v0.1.4/mediarchiver-0.1.4-py3-none-any.whl
 ```
 
 本地开发产物可以这样安装：

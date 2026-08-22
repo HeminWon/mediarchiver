@@ -1,8 +1,7 @@
 import re
-from decimal import Decimal, InvalidOperation
 
 from mediarchiver.rename.metadata import FileMetadataContext
-from mediarchiver.rename.naming import first_formatted_metadata_date
+from mediarchiver.rename.naming import first_formatted_metadata_date, formatted_fps
 from mediarchiver.rename.original_id import fallback_original_id
 from mediarchiver.rename.plan import RenamePlanItem
 from mediarchiver.rename.rule_builder import RenameRuleError
@@ -161,17 +160,8 @@ def resolution_tag(video_stream: dict):
 
 def fps_tag(video_stream: dict):
     frame_rate = video_stream.get("avg_frame_rate") or video_stream.get("r_frame_rate")
-    if not frame_rate:
-        return None
-    try:
-        numerator, denominator = frame_rate.split("/", 1)
-        denominator_int = int(denominator)
-        if denominator_int == 0:
-            return None
-        fps = Decimal(numerator) / Decimal(denominator_int)
-    except (ValueError, InvalidOperation):
-        return None
-    return f"{fps.quantize(Decimal('0.01')).normalize()}FPS"
+    fps = formatted_fps(frame_rate)
+    return f"{fps}FPS" if fps is not None else None
 
 
 def codec_tag(video_stream: dict):

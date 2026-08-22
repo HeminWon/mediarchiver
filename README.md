@@ -32,7 +32,7 @@ The recommended install path is the release wheel with `uv tool install`.
 It creates an isolated tool environment and exposes the `mediarchiver` command:
 
 ```bash
-uv tool install https://github.com/heminwon/mediarchiver/releases/download/v0.1.3/mediarchiver-0.1.3-py3-none-any.whl
+uv tool install https://github.com/heminwon/mediarchiver/releases/download/v0.1.4/mediarchiver-0.1.4-py3-none-any.whl
 ```
 
 For local development artifacts:
