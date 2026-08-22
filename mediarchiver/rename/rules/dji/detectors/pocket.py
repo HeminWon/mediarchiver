@@ -7,8 +7,15 @@ from mediarchiver.common.tool import is_vid
 from mediarchiver.rename.metadata import FileMetadataContext
 
 DJI_FILENAME_PATTERN = re.compile(r"^DJI_\d{14}_\d{4}_.+\.[^.]+$", re.IGNORECASE)
+DJI_TIMELAPSE_DNG_PATTERN = re.compile(r"^TIMELAPSE_\d{4}\.DNG$", re.IGNORECASE)
 DJI_SIDE_SUFFIXES = {".lrf"}
 DJI_METADATA_FIELDS = (
+    "Make",
+    "Model",
+    "UniqueCameraModel",
+    "ProductName",
+    "SerialNumber",
+    "CameraSerialNumber",
     "Encoder",
     "Category",
     "DjiCameraCameraModel",
@@ -21,12 +28,16 @@ DJI_METADATA_FIELDS = (
     "DjiCameraWhiteBalanceTintCc",
 )
 POCKET4P_METADATA_FIELDS = (
+    "Model",
+    "UniqueCameraModel",
+    "ProductName",
     "Encoder",
     "Category",
     "DjiCameraCameraModel",
 )
 POCKET4P_MARKERS = (
     "osmo pocket 4p",
+    "osmopocket4p",
     "dvtm_osmo_pocket_4",
     "PP-041",
 )
@@ -42,16 +53,28 @@ class PocketDetector:
     family = "pocket"
 
     def candidate_media_path(self, file_path: str) -> bool:
+        return self.candidate_video_path(file_path) or self.candidate_timelapse_dng_path(file_path)
+
+    def candidate_video_path(self, file_path: str) -> bool:
         base = os.path.basename(file_path)
         return is_vid(file_path) and DJI_FILENAME_PATTERN.match(base) is not None
+
+    def candidate_timelapse_dng_path(self, file_path: str) -> bool:
+        base = os.path.basename(file_path)
+        return (
+            Path(file_path).suffix.lower() == ".dng"
+            and DJI_TIMELAPSE_DNG_PATTERN.match(base) is not None
+        )
 
     def candidate_sidecar_path(self, file_path: str) -> bool:
         return Path(file_path).suffix.lower() in DJI_SIDE_SUFFIXES
 
     def match_media(self, context: FileMetadataContext) -> PocketMatch:
         reasons = []
-        if self.candidate_media_path(context.file_path):
+        if self.candidate_video_path(context.file_path):
             reasons.append("filename=dji_timestamp_id_pattern")
+        if self.candidate_timelapse_dng_path(context.file_path):
+            reasons.append("filename=dji_timelapse_dng_pattern")
         metadata = context.exif_metadata or {}
         if metadata_contains_dji(metadata):
             reasons.append("metadata=dji")
