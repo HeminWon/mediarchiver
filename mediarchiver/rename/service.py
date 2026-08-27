@@ -288,84 +288,89 @@ def mark_destination_conflicts(items):
     return updated
 
 
-def apply_rename_plan(plan, dry_run=False):
-    report_logger = OperationLogger(plan.source_dir, "rename")
-    process_items = tqdm(plan.items)
-    for item in process_items:
-        process_items.set_description("Applying " + os.path.basename(item.source))
-        if item.status != "ready":
-            report_logger.record(
-                "rename",
-                item.source,
-                destination=item.destination,
-                status="conflict" if item.status == "conflict" else "skipped",
-                reason=item.reason,
-                details=item.details,
-            )
-            continue
+def apply_rename_plan(plan, dry_run=False, report_dir=None):
+    report_dir = report_dir or plan.source_dir
+    with OperationLogger(report_dir, "rename") as report_logger:
+        process_items = tqdm(plan.items)
+        for item in process_items:
+            process_items.set_description("Applying " + os.path.basename(item.source))
+            if item.status != "ready":
+                report_logger.record(
+                    "rename",
+                    item.source,
+                    destination=item.destination,
+                    status="conflict" if item.status == "conflict" else "skipped",
+                    reason=item.reason,
+                    details=item.details,
+                )
+                continue
 
-        if item.destination is None:
-            report_logger.record(
-                "rename",
-                item.source,
-                status="skipped",
-                reason="missing_destination",
-            )
-            continue
+            if item.destination is None:
+                report_logger.record(
+                    "rename",
+                    item.source,
+                    status="skipped",
+                    reason="missing_destination",
+                )
+                continue
 
-        if os.path.exists(item.destination):
-            report_logger.record(
-                "rename",
-                item.source,
-                destination=item.destination,
-                status="conflict",
-                reason="destination_exists",
-            )
-            continue
+            if os.path.exists(item.destination):
+                report_logger.record(
+                    "rename",
+                    item.source,
+                    destination=item.destination,
+                    status="conflict",
+                    reason="destination_exists",
+                )
+                continue
 
-        if not os.path.exists(item.source):
-            report_logger.record(
-                "rename",
-                item.source,
-                destination=item.destination,
-                status="skipped",
-                reason="source_missing",
-            )
-            continue
+            if not os.path.exists(item.source):
+                report_logger.record(
+                    "rename",
+                    item.source,
+                    destination=item.destination,
+                    status="skipped",
+                    reason="source_missing",
+                )
+                continue
 
-        if dry_run:
-            logging.info(
-                "preview rename from plan: %s => %s",
-                os.path.basename(item.source),
-                os.path.basename(item.destination),
-            )
-            report_logger.record(
-                "rename",
-                item.source,
-                destination=item.destination,
-                status="preview",
-                reason="dry_run",
-            )
-            continue
+            if dry_run:
+                logging.info(
+                    "preview rename from plan: %s => %s",
+                    os.path.basename(item.source),
+                    os.path.basename(item.destination),
+                )
+                report_logger.record(
+                    "rename",
+                    item.source,
+                    destination=item.destination,
+                    status="preview",
+                    reason="dry_run",
+                )
+                continue
 
-        try:
-            logging.info("rename: %s => %s", item.source, item.destination)
-            os.rename(item.source, item.destination)
-            report_logger.record(
-                "rename",
-                item.source,
-                destination=item.destination,
-                status="success",
-            )
-        except OSError as exc:
-            logging.exception("apply rename plan failed: %s", item.source)
-            report_logger.record(
-                "rename",
-                item.source,
-                destination=item.destination,
-                status="skipped",
-                reason="rename_failed",
-                details={"message": str(exc)},
-            )
-    process_items.close()
-    return report_logger.summary.as_dict()
+            try:
+                logging.info("rename: %s => %s", item.source, item.destination)
+                os.rename(item.source, item.destination)
+                report_logger.record(
+                    "rename",
+                    item.source,
+                    destination=item.destination,
+                    status="success",
+                )
+            except OSError as exc:
+                logging.exception("apply rename plan failed: %s", item.source)
+                report_logger.record(
+                    "rename",
+                    item.source,
+                    destination=item.destination,
+                    status="skipped",
+                    reason="rename_failed",
+                    details={"message": str(exc)},
+                )
+        process_items.close()
+        summary = report_logger.summary.as_dict()
+        summary["operation_jsonl"] = str(report_logger.operation_file)
+        if report_logger.conflict_file.exists():
+            summary["conflict_jsonl"] = str(report_logger.conflict_file)
+        return summary

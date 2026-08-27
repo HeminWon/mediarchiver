@@ -155,6 +155,15 @@ def print_preview(plan, limit=PREVIEW_LIMIT):
         print(f"- ... {remaining} more ready item(s); see plan for full list", flush=True)
 
 
+def print_artifacts(artifact_dir, artifacts):
+    print()
+    print("[rename] artifacts", flush=True)
+    print(f"- dir: {artifact_dir}", flush=True)
+    for label, path in artifacts:
+        if path:
+            print(f"- {label}: {path}", flush=True)
+
+
 def run_with_args(args):
     if args.list_rules:
         print_rules()
@@ -189,12 +198,16 @@ def run_with_args(args):
     print_preview(plan)
     print()
     print_plan_summary("rename", plan.summary)
-    print(f"- plan: {plan_path}")
-    print(f"- log: {log_path}")
     issue_jsonl_path = write_issue_jsonl(plan, artifact_dir)
-    print_issue_summary(plan, issue_jsonl_path)
+    artifacts = [
+        ("plan", plan_path),
+        ("log", log_path),
+        ("issues", issue_jsonl_path),
+    ]
+    print_issue_summary(plan)
 
     if not args.apply:
+        print_artifacts(artifact_dir, artifacts)
         print()
         print("Preview only. No files were renamed. Pass --apply to rename ready items.")
         return 0
@@ -206,10 +219,18 @@ def run_with_args(args):
         f"conflict: {s['conflict']}"
     )
     if not confirm_proceed("Apply rename?"):
+        print_artifacts(artifact_dir, artifacts)
         print("[rename] aborted.")
         return 0
-    summary = apply_rename_plan(plan, dry_run=False)
+    summary = apply_rename_plan(plan, dry_run=False, report_dir=artifact_dir)
     print_run_summary("rename", summary)
+    artifacts.extend(
+        [
+            ("operations", summary.get("operation_jsonl")),
+            ("conflicts", summary.get("conflict_jsonl")),
+        ]
+    )
+    print_artifacts(artifact_dir, artifacts)
     return 0
 
 
