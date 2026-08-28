@@ -9,18 +9,8 @@ default:
 setup:
     uv sync --extra dev
 
-lock:
-    uv lock
-
-lint:
+check:
     uv run --no-sync ruff check mediarchiver
-
-check: lint
-
-smoke:
-    uv run --no-sync python -m mediarchiver --help
-    uv run --no-sync python -m mediarchiver rename --list-rules
-    uv run --no-sync python -m mediarchiver archive --help
 
 build:
     rm -f dist/mediarchiver-*.whl dist/mediarchiver-*.tar.gz
@@ -37,10 +27,6 @@ uninstall-wheel:
 binary:
     rm -rf build/pyinstaller dist/bin
     uv run --extra dev pyinstaller --clean --noconfirm --onefile --name mediarchiver --hidden-import zlib --exclude-module multiprocessing --collect-submodules mediarchiver.rename.rules --distpath dist/bin --workpath build/pyinstaller --specpath build/pyinstaller mediarchiver/__main__.py
-
-smoke-binary: binary
-    ./dist/bin/mediarchiver --help
-    ./dist/bin/mediarchiver rename --list-rules
 
 install-binary: binary
     local_bin="${LOCAL_BIN:-$HOME/.local/bin}"; \

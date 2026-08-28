@@ -23,7 +23,6 @@ uv run --no-sync python -m mediarchiver --version
 ```bash
 just setup
 just check
-just smoke
 just install-wheel
 just uninstall-wheel
 just binary
@@ -188,7 +187,9 @@ Archive 应保持保守：
 
 ```bash
 just check
-just smoke
+uv run --no-sync python -m mediarchiver --help
+uv run --no-sync python -m mediarchiver rename --list-rules
+uv run --no-sync python -m mediarchiver archive --help
 just binary
 ./dist/bin/mediarchiver --version
 ./dist/bin/mediarchiver rename --list-rules
