@@ -4,31 +4,19 @@ from collections import Counter
 
 from tqdm import tqdm
 
+from mediarchiver.common.progress_map import map_with_progress
 from mediarchiver.common.reporting import OperationLogger
-from mediarchiver.common.workers import map_with_workers, resolve_worker_count
 from mediarchiver.rename.inventory import collect_source_inventory
 from mediarchiver.rename.metadata import build_file_metadata_context, get_context_load_error
 from mediarchiver.rename.plan import RENAME_PLAN_VERSION, RenamePlan, RenamePlanItem
 from mediarchiver.rename.registry import get_rule, list_rules
 from mediarchiver.rename.rule import RuleFileSet, normalize_rule_plan_item
 
-MAX_CONTEXT_PREFETCH_WORKERS = 4
 
-
-def get_prefetch_workers(item_count, requested_workers=None):
-    return resolve_worker_count(
-        item_count,
-        requested_workers=requested_workers,
-        default_max_workers=MAX_CONTEXT_PREFETCH_WORKERS,
-    )
-
-
-def prefetch_file_contexts(file_paths, workers=None):
-    return map_with_workers(
+def prefetch_file_contexts(file_paths):
+    return map_with_progress(
         file_paths,
         build_file_metadata_context,
-        requested_workers=workers,
-        default_max_workers=MAX_CONTEXT_PREFETCH_WORKERS,
         progress_desc="Prefetch metadata",
     )
 
@@ -36,7 +24,6 @@ def prefetch_file_contexts(file_paths, workers=None):
 def build_rename_plan(
     source,
     rule_id=None,
-    workers=None,
     include_formatted=False,
     observer=None,
 ):
@@ -55,7 +42,7 @@ def build_rename_plan(
     ]
     scan_summary = summarize_scan(inventory, file_sets)
     notify_observer(observer, "scan", scan_summary)
-    contexts = prefetch_file_contexts(inventory.media_paths, workers=workers)
+    contexts = prefetch_file_contexts(inventory.media_paths)
     valid_contexts, items = split_context_load_results(contexts)
     metadata_summary = summarize_metadata(contexts, valid_contexts, items)
     notify_observer(observer, "metadata", metadata_summary)
@@ -86,7 +73,6 @@ def build_rename_plan(
         options={
             "rule": rule_id or "auto",
             "rules": [rule.id for rule in rules],
-            "workers": workers,
             "include_formatted": include_formatted,
             "scan": scan_summary,
             "metadata": metadata_summary,

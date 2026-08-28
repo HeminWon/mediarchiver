@@ -1,5 +1,4 @@
 import json
-import shlex
 from collections import Counter
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -97,33 +96,6 @@ def load_rename_plan(path):
     plan = RenamePlan.from_dict(payload)
     validate_rename_plan(plan)
     return plan
-
-
-def render_rename_plan_shell(plan):
-    validate_rename_plan(plan)
-    lines = [
-        "#!/usr/bin/env bash",
-        "set -euo pipefail",
-        "",
-        f"# Generated from rename plan: {plan.source_dir}",
-    ]
-
-    ready_items = [item for item in plan.items if item.status == "ready"]
-    if not ready_items:
-        lines.append("# No ready rename actions in plan")
-        return "\n".join(lines) + "\n"
-
-    for item in ready_items:
-        if item.destination is None:
-            continue
-        lines.append(f"mv {shlex.quote(item.source)} {shlex.quote(item.destination)}")
-    return "\n".join(lines) + "\n"
-
-
-def export_rename_plan_shell(plan, path):
-    target_path = Path(path)
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    target_path.write_text(render_rename_plan_shell(plan), encoding="utf-8")
 
 
 def validate_rename_plan(plan):
