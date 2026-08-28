@@ -32,7 +32,7 @@
 `mediarchiver` 命令：
 
 ```bash
-uv tool install https://github.com/heminwon/mediarchiver/releases/download/v0.1.4/mediarchiver-0.1.4-py3-none-any.whl
+uv tool install https://github.com/heminwon/mediarchiver/releases/download/v0.1.5/mediarchiver-0.1.5-py3-none-any.whl
 ```
 
 本地开发产物可以这样安装：
@@ -40,6 +40,12 @@ uv tool install https://github.com/heminwon/mediarchiver/releases/download/v0.1.
 ```bash
 uv build
 uv tool install --reinstall dist/mediarchiver-*.whl
+```
+
+卸载 uv tool 安装的版本：
+
+```bash
+uv tool uninstall mediarchiver
 ```
 
 GitHub Releases 也会继续发布独立二进制，适合不想使用 Python 工具安装器的用户：
