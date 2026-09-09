@@ -33,10 +33,10 @@ jobs:
 
       - name: Pytest
         run: |
-          if [ -d tests ]; then
+          if find tests -type f \( -name 'test_*.py' -o -name '*_test.py' \) 2>/dev/null | grep -q .; then
             uv run --no-sync pytest
           else
-            echo "No tests directory; skipping pytest."
+            echo "No test files; skipping pytest."
           fi
 
       - name: Smoke

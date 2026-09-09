@@ -1,0 +1,22 @@
+[{
+  "SourceFile": "GX010119.THM",
+  "ExifToolVersion": 13.55,
+  "FileName": "GX010119.THM",
+  "Directory": ".",
+  "FileSize": "17 kB",
+  "FileModifyDate": "2026:08:29 15:46:29+08:00",
+  "FileAccessDate": "2026:08:29 17:33:17+08:00",
+  "FileInodeChangeDate": "2026:08:29 16:34:44+08:00",
+  "FilePermissions": "-rwx------",
+  "FileType": "THM",
+  "FileTypeExtension": "thm",
+  "MIMEType": "image/jpeg",
+  "ImageWidth": 160,
+  "ImageHeight": 120,
+  "EncodingProcess": "Baseline DCT, Huffman coding",
+  "BitsPerSample": 8,
+  "ColorComponents": 3,
+  "YCbCrSubSampling": "YCbCr4:2:2 (2 1)",
+  "ImageSize": "160x120",
+  "Megapixels": 0.019
+}]
