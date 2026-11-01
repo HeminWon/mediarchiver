@@ -33,12 +33,12 @@ class Pocket4PPreset:
         item.details["rule_match"] = list(match_reasons)
         return item
 
-    def build_lrf_item(
+    def build_sidecar_item(
         self,
         file_path: str,
         primary_items_by_stem: dict[str, RenamePlanItem],
     ) -> RenamePlanItem:
-        return build_lrf_plan_item(file_path, primary_items_by_stem)
+        return build_sidecar_plan_item(file_path, primary_items_by_stem)
 
 
 PRESET = Pocket4PPreset()
@@ -48,16 +48,31 @@ def build_media_plan_item(source_dir: str, context: FileMetadataContext) -> Rena
     return build_standard_media_plan_item(source_dir, context, build_new_file_name)
 
 
-def build_lrf_plan_item(
+def build_sidecar_plan_item(
     file_path: str,
     primary_items_by_stem: dict[str, RenamePlanItem],
 ) -> RenamePlanItem:
     source_path = Path(file_path)
     primary_item = primary_items_by_stem.get(source_path.stem)
+    is_audio = source_path.suffix.lower() == ".aac"
     details = {
-        "sidecar_rule": "dji_lrf",
-        "sidecar_type": "low_resolution_proxy",
+        "sidecar_rule": "dji_aac" if is_audio else "dji_lrf",
+        "sidecar_type": "companion_audio" if is_audio else "low_resolution_proxy",
     }
+    if primary_item is None and is_audio:
+        # A previous rename may have left the original AAC beside a renamed MP4.
+        match = re.fullmatch(r"DJI_(\d{8})(\d{6})_(\d{4})_D", source_path.stem, re.I)
+        if match:
+            date, time, clip = match.groups()
+            candidates = [
+                path for path in source_path.parent.glob(f"{date}-{time}_{DEVICE_UNIT}_*_{clip}.*")
+                if path.suffix.lower() == ".mp4" and path.is_file()
+            ]
+            if len(candidates) == 1:
+                paired_path = str(candidates[0])
+                details["paired_with"] = paired_path
+                return sidecar_destination_item(source_path, paired_path, details)
+
     if primary_item is None:
         return RenamePlanItem(
             source=file_path,
@@ -81,7 +96,12 @@ def build_lrf_plan_item(
             details=details,
         )
 
-    destination = str(Path(primary_item.destination).with_suffix(source_path.suffix))
+    return sidecar_destination_item(source_path, primary_item.destination, details)
+
+
+def sidecar_destination_item(source_path: Path, primary_destination: str, details: dict):
+    file_path = str(source_path)
+    destination = str(Path(primary_destination).with_suffix(source_path.suffix))
     if destination == file_path:
         return RenamePlanItem(
             source=file_path,

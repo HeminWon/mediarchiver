@@ -1,7 +1,7 @@
 import os
 import re
 
-SIDECAR_EXTENSIONS = {"aae", "lrf", "lrv", "log", "srt", "thm", "xmp", "xml"}
+SIDECAR_EXTENSIONS = {"aac", "aae", "lrf", "lrv", "log", "srt", "thm", "xmp", "xml"}
 
 
 def is_sidecar_file(file_path):

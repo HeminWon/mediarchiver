@@ -61,7 +61,7 @@ class DjiPocket4PRule:
                 primary_items_by_stem[Path(media_path).stem] = item
 
         for sidecar_path in file_set.sidecar_paths:
-            items.append(self.preset.build_lrf_item(sidecar_path, primary_items_by_stem))
+            items.append(self.preset.build_sidecar_item(sidecar_path, primary_items_by_stem))
 
         return mark_destination_conflicts(items)
 

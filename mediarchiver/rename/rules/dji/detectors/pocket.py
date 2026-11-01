@@ -67,7 +67,10 @@ class PocketDetector:
         )
 
     def candidate_sidecar_path(self, file_path: str) -> bool:
-        return Path(file_path).suffix.lower() in DJI_SIDE_SUFFIXES
+        path = Path(file_path)
+        return path.suffix.lower() in DJI_SIDE_SUFFIXES or (
+            path.suffix.lower() == ".aac" and DJI_FILENAME_PATTERN.fullmatch(path.name) is not None
+        )
 
     def match_media(self, context: FileMetadataContext) -> PocketMatch:
         reasons = []
